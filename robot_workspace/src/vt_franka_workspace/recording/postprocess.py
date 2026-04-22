@@ -73,7 +73,9 @@ def align_episode(
     if not controller:
         raise RuntimeError(f"No controller_state stream found in {episode_dir}")
 
-    controller_times = _timestamp_array(controller, "source_wall_time")
+    # Use received_wall_time for controller to avoid clock skew between
+    # the robot (source_wall_time) and the workspace machine.
+    controller_times = _timestamp_array(controller, "received_wall_time")
     teleop_times = _timestamp_array(teleop, "source_wall_time")
     gelsight_times = _timestamp_array(gelsight, "captured_wall_time")
     rgb_stream_times = {stream_name: _timestamp_array(records, "captured_wall_time") for stream_name, records in rgb_streams.items()}
