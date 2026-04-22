@@ -1,7 +1,7 @@
 controller:
-  host: 192.168.217.180
+  host: 10.0.0.1
   port: 8092
-  request_timeout_sec: 1.0
+  request_timeout_sec: 0.1
 
 teleop:
   host: 0.0.0.0
@@ -9,8 +9,10 @@ teleop:
   loop_hz: 60.0
   tracking_button_index: 4
   trigger_close_threshold: 0.5
-  relative_translation_scale: 0.8
+  relative_translation_scale: 1.0
+  relative_rotation_scale: 0.3
   max_tracking_position_error_m: 0.3
+  operator_yaw_offset_deg: 180.0
   use_force_control_for_gripper: true
   max_gripper_width: 0.078
   min_gripper_width: 0.0
@@ -40,7 +42,7 @@ gelsight:
   camera_path: /dev/v4l/by-id/usb-Arducam_Technology_Co.__Ltd._GelSight_Mini_R0B_2BUU-CE3E_2BUUCE3E-video-index0
   device_name_contains: GelSight Mini
   device_serial_number: 2BUUCE3E
-  fps: 30
+  fps: 15
   width: 640
   height: 480
   exposure: -6
@@ -82,7 +84,7 @@ rgb_cameras:
     save_frames: true
     record_hz: 15.0
     quest_stream:
-      enabled: true
+      enabled: false
       image_id: wrist_rgb
       in_head_space: false
       left_or_right: false

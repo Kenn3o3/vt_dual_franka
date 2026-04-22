@@ -69,10 +69,20 @@ class DemoPublisher:
 
     def _run_gelsight(self) -> None:
         assert self.gelsight_publisher is not None
-        self.gelsight_publisher.run(stop_event=self.gelsight_stop_event)
+        try:
+            self.gelsight_publisher.run(stop_event=self.gelsight_stop_event)
+        except Exception as exc:
+            LOGGER.error("GelSight demo publisher stopped: %s", exc)
 
     def _get_gripper_status(self) -> dict[str, bool]:
-        state = self.state_monitor.get_state(max_age_sec=2.0)
+        state = self.state_monitor.get_state_optional(max_age_sec=2.0)
+        if state is None:
+            return {
+                "left_gripper_stable_closed": False,
+                "right_gripper_stable_closed": False,
+                "left_gripper_stable_open": True,
+                "right_gripper_stable_open": True,
+            }
         self._last_force = state.gripper_force
         self._gripper_width_history.append(state.gripper_width)
         stable_open = self._is_gripper_stable_open()

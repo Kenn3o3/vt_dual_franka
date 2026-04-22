@@ -264,6 +264,15 @@ _OPERATOR_PAGE = """<!doctype html>
       transform: none;
     }
     button:not(:disabled):hover { transform: translateY(-1px); }
+    button kbd {
+      margin-left: 8px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.18);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+    }
     .list {
       display: grid;
       gap: 10px;
@@ -388,11 +397,11 @@ _OPERATOR_PAGE = """<!doctype html>
       <section class="panel">
         <h2>Actions</h2>
         <div class="actions">
-          <button id="resetButton" onclick="invokeAction('reset')">Reset Pose</button>
-          <button id="startButton" class="secondary" onclick="invokeAction('start')">Start Episode</button>
-          <button id="stopButton" onclick="invokeAction('stop')">Stop / Save</button>
-          <button id="discardButton" class="warning" onclick="invokeAction('discard', true)">Discard Latest</button>
-          <button id="quitButton" class="warning" onclick="invokeAction('quit', true)">Quit</button>
+          <button id="resetButton" onclick="invokeAction('reset')">Reset Pose <kbd>H</kbd></button>
+          <button id="startButton" class="secondary" onclick="invokeAction('start')">Start Episode <kbd>R</kbd></button>
+          <button id="stopButton" onclick="invokeAction('stop')">Stop / Save <kbd>E</kbd></button>
+          <button id="discardButton" class="warning" onclick="invokeAction('discard', true)">Discard Latest <kbd>D</kbd></button>
+          <button id="quitButton" class="warning" onclick="invokeAction('quit', true)">Quit <kbd>Q</kbd></button>
         </div>
         <div>
           <h2>Blocking Reasons</h2>
@@ -602,6 +611,25 @@ _OPERATOR_PAGE = """<!doctype html>
 
     refreshAll();
     setInterval(refreshAll, 1000);
+
+    const HOTKEYS = {
+      h: { action: 'reset', confirm: false, buttonId: 'resetButton' },
+      r: { action: 'start', confirm: false, buttonId: 'startButton' },
+      e: { action: 'stop', confirm: false, buttonId: 'stopButton' },
+      d: { action: 'discard', confirm: true, buttonId: 'discardButton' },
+      q: { action: 'quit', confirm: true, buttonId: 'quitButton' },
+    };
+    document.addEventListener('keydown', (event) => {
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      const mapped = HOTKEYS[event.key.toLowerCase()];
+      if (!mapped) return;
+      const btn = document.getElementById(mapped.buttonId);
+      if (!btn || btn.disabled) return;
+      event.preventDefault();
+      invokeAction(mapped.action, mapped.confirm);
+    });
   </script>
 </body>
 </html>

@@ -19,7 +19,9 @@ class TeleopSettings(BaseModel):
     tracking_button_index: int = 4
     trigger_close_threshold: float = 0.5
     relative_translation_scale: float = 0.8
+    relative_rotation_scale: float = 1.0
     max_tracking_position_error_m: float = 0.3
+    operator_yaw_offset_deg: float = 0.0 # addec this
     use_force_control_for_gripper: bool = True
     max_gripper_width: float = 0.078
     min_gripper_width: float = 0.0

@@ -21,6 +21,9 @@ from ...settings import GelsightSettings
 from .tracker import GelsightMarkerTracker
 
 
+MASKED_MARKER_INDICES = (8,)
+
+
 class GelsightPublisher:
     def __init__(
         self,
@@ -74,6 +77,7 @@ class GelsightPublisher:
 
                 resized = cv2.resize(frame, (self.settings.width, self.settings.height))
                 initial_markers, marker_offsets = self.tracker.process_frame(resized)
+                marker_offsets = self._apply_marker_safety_mask(marker_offsets)
                 initial_markers_norm, marker_offsets_norm = self.tracker.normalize_markers(
                     initial_markers.copy(),
                     marker_offsets.copy(),
@@ -176,6 +180,13 @@ class GelsightPublisher:
     @property
     def frames_seen(self) -> int:
         return self._frames_seen
+
+    def _apply_marker_safety_mask(self, marker_offsets: np.ndarray) -> np.ndarray:
+        masked_offsets = marker_offsets.copy()
+        for index in MASKED_MARKER_INDICES:
+            if 0 <= index < masked_offsets.shape[0]:
+                masked_offsets[index] = 0.0
+        return masked_offsets
 
     def _latency_match(self, marker_offsets: np.ndarray, gripper_state: dict[str, bool]) -> np.ndarray:
         if (

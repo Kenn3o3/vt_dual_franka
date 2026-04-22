@@ -57,6 +57,9 @@ class QuestTeleopService:
         self._gripper_width_history = deque(maxlen=self.settings.gripper_stability_window)
         self._last_message_wall_time: float | None = None
         self._teleop_enabled = False
+        self._operator_yaw_rot: Rotation | None = None
+        if self.settings.operator_yaw_offset_deg != 0.0:
+            self._operator_yaw_rot = Rotation.from_euler("z", self.settings.operator_yaw_offset_deg, degrees=True)
 
     def submit_message(self, message: UnityTeleopMessage) -> None:
         source_wall_time = time.time()
@@ -127,6 +130,8 @@ class QuestTeleopService:
                 hand_pose_robot = self.calibration.unity_to_robot_pose(
                     np.asarray(message.leftHand.wristPos + message.leftHand.wristQuat, dtype=np.float64)
                 )
+                if self._operator_yaw_rot is not None:
+                    hand_pose_robot = self._rotate_pose(hand_pose_robot, self._operator_yaw_rot)
                 tracking_pressed = self._button_pressed(message, self.settings.tracking_button_index)
                 if tracking_pressed and not self._tracking:
                     self._tracking = True
@@ -205,7 +210,12 @@ class QuestTeleopService:
         current_rotation = Rotation.from_quat(_wxyz_to_xyzw(current_hand_pose[3:]))
         start_rotation = Rotation.from_quat(_wxyz_to_xyzw(self._start_hand_tcp[3:]))
         robot_start_rotation = Rotation.from_quat(_wxyz_to_xyzw(self._start_real_tcp[3:]))
-        target_rotation = current_rotation * start_rotation.inv() * robot_start_rotation
+        relative_rotation = current_rotation * start_rotation.inv()
+        scale = self.settings.relative_rotation_scale
+        if scale < 1.0:
+            rotvec = relative_rotation.as_rotvec()
+            relative_rotation = Rotation.from_rotvec(rotvec * scale)
+        target_rotation = relative_rotation * robot_start_rotation
         quat_xyzw = target_rotation.as_quat()
         target[3:] = [quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]]
         return target
@@ -235,6 +245,16 @@ class QuestTeleopService:
         if index >= len(message.leftHand.buttonState):
             return False
         return bool(message.leftHand.buttonState[index])
+
+    @staticmethod
+    def _rotate_pose(pose7: np.ndarray, rotation: Rotation) -> np.ndarray:
+        rotated = pose7.copy()
+        rotated[:3] = rotation.apply(pose7[:3])
+        original_rot = Rotation.from_quat(_wxyz_to_xyzw(pose7[3:]))
+        new_rot = rotation * original_rot
+        quat_xyzw = new_rot.as_quat()
+        rotated[3:] = [quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]]
+        return rotated
 
 
 def create_teleop_app(

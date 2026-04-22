@@ -371,8 +371,6 @@ class CollectSupervisor:
         self._current_episode_dir = None
         self._latest_saved_episode_dir = episode_dir
         self._clear_snapshot_locked()
-        if self.teleop_service is not None:
-            self.teleop_service.set_teleop_enabled(False)
         self.sessions.record_operator_event("episode_stopped", {"episode_dir": str(episode_dir), "outcome": "saved"})
         LOGGER.info("Episode saved: %s", episode_dir)
         self._finalize_episode(episode_dir)

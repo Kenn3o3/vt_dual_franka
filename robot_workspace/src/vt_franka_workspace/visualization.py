@@ -24,8 +24,10 @@ def export_episode_composite_video(
     timestamps = np.asarray(data["timestamps"], dtype=np.float64)
     action_pose = _pose7_array_to_xyz_rpy(np.asarray(data["teleop_target_tcp"], dtype=np.float64))
     proprio_pose = _pose7_array_to_xyz_rpy(np.asarray(data["robot_tcp_pose"], dtype=np.float64))
-    rgb_stream_name = _select_primary_rgb_stream(data)
-    rgb_paths = np.asarray(data[f"{rgb_stream_name}_frame_paths"], dtype=object)
+    rgb_streams = [
+        (name, np.asarray(data[f"{name}_frame_paths"], dtype=object))
+        for name in _select_rgb_streams(data)
+    ]
     if timestamps.size == 0:
         raise RuntimeError(f"No aligned timestamps found in {npz_path}")
 
@@ -46,7 +48,7 @@ def export_episode_composite_video(
                 index=index,
                 episode_dir=episode_dir,
                 timestamps=timestamps,
-                rgb_paths=rgb_paths,
+                rgb_streams=rgb_streams,
                 action_pose=action_pose,
                 proprio_pose=proprio_pose,
                 manifest=manifest,
@@ -61,16 +63,15 @@ def export_episode_composite_video(
     return output_path
 
 
-def _select_primary_rgb_stream(data: np.lib.npyio.NpzFile) -> str:
+def _select_rgb_streams(data: np.lib.npyio.NpzFile) -> list[str]:
     frame_path_keys = sorted(key for key in data.files if key.endswith("_frame_paths"))
     if not frame_path_keys:
         raise RuntimeError("No aligned RGB frame stream found in aligned_episode.npz")
+    available = [key[: -len("_frame_paths")] for key in frame_path_keys]
     preferred_order = ["rgb_third_person", "rgb_wrist"]
-    for stream_name in preferred_order:
-        key = f"{stream_name}_frame_paths"
-        if key in frame_path_keys:
-            return stream_name
-    return frame_path_keys[0][: -len("_frame_paths")]
+    ordered = [name for name in preferred_order if name in available]
+    ordered.extend(name for name in available if name not in ordered)
+    return ordered
 
 
 def _resolve_episode_paths(episode_dir_or_npz: str | Path) -> tuple[Path, Path]:
@@ -119,7 +120,7 @@ def _render_composite_frame(
     index: int,
     episode_dir: Path,
     timestamps: np.ndarray,
-    rgb_paths: np.ndarray,
+    rgb_streams: list[tuple[str, np.ndarray]],
     action_pose: np.ndarray,
     proprio_pose: np.ndarray,
     manifest: dict,
@@ -139,18 +140,23 @@ def _render_composite_frame(
     right_width = canvas_width - right_x0 - 36
     right_height = 886
 
-    _draw_rgb_panel(
-        canvas,
-        x=left_x0,
-        y=left_y0,
-        width=left_width,
-        height=left_height,
-        episode_dir=episode_dir,
-        rgb_paths=rgb_paths,
-        index=index,
-        timestamps=timestamps,
-        cv2=cv2,
-    )
+    stream_count = max(1, len(rgb_streams))
+    stream_gap = 14 if stream_count > 1 else 0
+    panel_height = (left_height - stream_gap * (stream_count - 1)) // stream_count
+    for slot, (stream_name, rgb_paths) in enumerate(rgb_streams):
+        _draw_rgb_panel(
+            canvas,
+            x=left_x0,
+            y=left_y0 + slot * (panel_height + stream_gap),
+            width=left_width,
+            height=panel_height,
+            episode_dir=episode_dir,
+            rgb_paths=rgb_paths,
+            index=index,
+            timestamps=timestamps,
+            title=_prettify_stream_name(stream_name),
+            cv2=cv2,
+        )
 
     labels = ["x", "y", "z", "roll", "pitch", "yaw"]
     colors = [
@@ -275,8 +281,9 @@ def _draw_rgb_panel(
     index: int,
     timestamps: np.ndarray,
     cv2,
+    title: str = "RGB",
 ) -> None:
-    _draw_panel_card(canvas, x, y, width, height, title="RGB")
+    _draw_panel_card(canvas, x, y, width, height, title=title)
     image = _load_rgb_frame(episode_dir, rgb_paths, index, cv2)
     content_x = x + 18
     content_y = y + 54
@@ -590,3 +597,8 @@ def _fit_image(image: np.ndarray, width: int, height: int, cv2) -> np.ndarray:
     target_w = max(1, int(round(iw * scale)))
     target_h = max(1, int(round(ih * scale)))
     return cv2.resize(image, (target_w, target_h), interpolation=cv2.INTER_AREA)
+
+
+def _prettify_stream_name(stream_name: str) -> str:
+    label = stream_name.removeprefix("rgb_").replace("_", " ").strip()
+    return label.title() if label else stream_name
