@@ -28,6 +28,14 @@ class ControlSettings(BaseModel):
     home_duration_sec: float = 8.0
     ready_ee_pose: Optional[List[float]] = None
     ready_duration_sec: float = 5.0
+    ready_joint_positions: Optional[List[float]] = None
+    ready_joint_duration_sec: Optional[float] = None
+    reset_fast_path_position_threshold_m: float = 0.06
+    reset_fast_path_rotation_threshold_deg: float = 12.0
+    reset_settle_position_threshold_m: float = 0.01
+    reset_settle_rotation_threshold_deg: float = 3.0
+    reset_settle_timeout_sec: float = 3.0
+    reset_settle_dwell_sec: float = 0.3
     max_queue_size: int = 256
 
 

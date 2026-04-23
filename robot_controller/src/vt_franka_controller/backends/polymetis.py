@@ -112,6 +112,13 @@ class PolymetisFrankaBackend(FrankaBackend):
             time_to_go=duration_sec,
         )
 
+    def move_to_joints(self, joint_positions: Sequence[float], duration_sec: float | None = None) -> None:
+        positions = self._torch.Tensor(np.asarray(joint_positions, dtype=np.float32))
+        kwargs = {}
+        if duration_sec is not None:
+            kwargs["time_to_go"] = duration_sec
+        self._robot.move_to_joint_positions(positions=positions, **kwargs)
+
     def shutdown(self) -> None:
         try:
             self._robot.terminate_current_policy()

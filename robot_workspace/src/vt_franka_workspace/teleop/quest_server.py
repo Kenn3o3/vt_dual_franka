@@ -173,7 +173,9 @@ class QuestTeleopService:
         return self.controller.get_state()
 
     def _handle_gripper_toggle(self, message: UnityTeleopMessage) -> None:
-        wants_closed = message.leftHand.triggerState > self.settings.trigger_close_threshold
+        trigger_pressed = message.leftHand.triggerState > self.settings.trigger_close_threshold
+        grip_pressed = self._button_pressed(message, 3)
+        wants_closed = trigger_pressed or grip_pressed
         if wants_closed and not self._gripper_closed:
             if self.settings.use_force_control_for_gripper:
                 self.controller.grasp_gripper(

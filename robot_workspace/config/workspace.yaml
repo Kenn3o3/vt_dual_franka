@@ -148,7 +148,7 @@ collect:
   controller_gap_warn_sec: 0.5
   controller_gap_fail_sec: 2.0
   status_print_hz: 1.0
-  record_raw_quest_messages: false
+  record_raw_quest_messages: true
 
 auto_collect:
   command_hz: 15.0
@@ -179,17 +179,51 @@ auto_collect:
 calibration:
   calibration_dir: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/calibration/v6
 
+reset:
+  default_profile: ready
+  profiles:
+    ready:
+      joint_positions: [1.7026, -0.0901, -0.1763, -1.8991, -0.0258, 1.791, 0.7442]
+      joint_duration_sec: 4.0
+      eef_pose_xyz_rpy_deg: [0.0, 0.45, 0.5, 180.0, 0.0, 45.0]
+      eef_duration_sec: 2.0
+      gripper_target: open
+      gripper_velocity: 0.1
+      gripper_force_limit: 7.0
+
 rollout:
-  control_hz: 12.0
+  control_hz: 10.0
   max_duration_sec: 30.0
   start_countdown_sec: 2.0
   status_print_hz: 1.0
   policy:
-    entrypoint: ""
-    kwargs: {}
+    entrypoint: "kenny.policies.mpd_diffusion_policy:create_policy"
+    kwargs:
+      checkpoint_path: "/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/third_parties/movement-primitive-diffusion/wandb/latest-run/files/model_epoch_200.pth"
+      config_path: "/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/third_parties/movement-primitive-diffusion/outputs/2026-04-22/23-12-08/.hydra/config.yaml"
+      scaler_path: "/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/mpd/put_cup_on_plate/scaler_values.npz"
+      device: "cuda"
+      confirm_before_execute: false
+      control_hz: 10.0
+      replan_interval_steps: 3
+      latency_step: 3
+      ensemble_mode: "hato"
+      ensemble_tau: 0.6
+      max_translation_step_m: 0.008
+      max_rotation_step_deg: 0.6
+      gripper_close_threshold: 0.65
+      gripper_open_threshold: 0.35
+      open_gripper_width: 0.078
+      gripper_velocity: 0.1
+      gripper_force_limit: 7.0
+      open_width_tolerance_m: 0.015
+      open_resend_interval_steps: 5
+      debug_timing_log_interval_sec: 2.0
     inputs:
       controller_state: true
-      rgb_cameras: []
+      rgb_cameras:
+        - wrist
+        - third_person
       gelsight_markers: false
       gelsight_frame: false
       controller_state_max_age_sec: 2.0

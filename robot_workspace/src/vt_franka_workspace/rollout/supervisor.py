@@ -20,6 +20,7 @@ from ..collect.controller_state import ControllerStateMonitor
 from ..controller.client import ControllerClient
 from ..operator import ManagedUvicornServer, OperatorActionError, OperatorLogBuffer, OperatorSnapshot, create_operator_app
 from ..publishers.quest_udp import QuestUdpPublisher
+from ..reset import build_reset_command
 from ..recording import RunSessionManager
 from ..recording.raw_recorder import JsonlStreamRecorder
 from ..sensors.rgb_camera import build_rgb_camera_recorder, resolve_rgb_camera_specs
@@ -147,6 +148,7 @@ class RolloutSupervisor:
         self._episode_error: Exception | None = None
         self._policy_terminated = False
         self._timeout_reached = False
+        self._last_rollout_gripper_closed: bool | None = None
         self._operator_lock = threading.RLock()
         self._quit_requested = threading.Event()
         self._frozen_rgb_snapshots: dict[str, OperatorSnapshot] = {}
@@ -369,6 +371,7 @@ class RolloutSupervisor:
         self._episode_error = None
         self._policy_terminated = False
         self._timeout_reached = False
+        self._last_rollout_gripper_closed = None
         self._episode_stop_event = threading.Event()
         self._clear_snapshot_locked()
         if hasattr(self.policy, "reset") and callable(getattr(self.policy, "reset")):
@@ -455,7 +458,8 @@ class RolloutSupervisor:
             raise OperatorActionError("Cannot reset while a rollout episode is active. Stop/save it first.")
         LOGGER.info("Resetting robot pose to controller ready pose")
         try:
-            self.controller.ready()
+            command = build_reset_command(self.settings, source="rollout_reset")
+            self.controller.reset(command)
         except Exception as exc:
             raise OperatorActionError(f"Failed to move robot to ready pose: {exc}") from exc
         self._reset_completed = True
@@ -524,12 +528,14 @@ class RolloutSupervisor:
             self.controller.queue_tcp(list(target_tcp), source="rollout")
         gripper_velocity = float(action.get("gripper_velocity", 0.1))
         gripper_force_limit = float(action.get("gripper_force_limit", 5.0))
-        if action.get("gripper_closed") is True:
+        desired_gripper_closed = action.get("gripper_closed")
+        if desired_gripper_closed is True and self._last_rollout_gripper_closed is not True:
             self.controller.grasp_gripper(
                 velocity=gripper_velocity,
                 force_limit=gripper_force_limit,
                 source="rollout",
             )
+            self._last_rollout_gripper_closed = True
         elif "gripper_width" in action:
             self.controller.move_gripper(
                 width=float(action["gripper_width"]),
@@ -537,6 +543,9 @@ class RolloutSupervisor:
                 force_limit=gripper_force_limit,
                 source="rollout",
             )
+            self._last_rollout_gripper_closed = False
+        elif desired_gripper_closed is False and self._last_rollout_gripper_closed is None:
+            self._last_rollout_gripper_closed = False
 
     def _get_state_for_observation(self, max_age_sec: float | None = None):
         state = self.state_monitor.get_state(max_age_sec=max_age_sec)

@@ -15,8 +15,10 @@ control:
   state_cache_hz: 60.0
   cartesian_stiffness: [750.0, 750.0, 750.0, 15.0, 15.0, 15.0]
   cartesian_damping: [37.0, 37.0, 37.0, 2.0, 2.0, 2.0]
-  home_ee_pose: [0.1, 0.4, 0.4, 180, 0, 45] # position in meters and orientation in degrees (roll, pitch, yaw)
+  home_ee_pose: [0.0, 0.45, 0.5, 180, 0, 45] # position in meters and orientation in degrees (roll, pitch, yaw)
   home_duration_sec: 8.0
-  ready_ee_pose: [0.1, 0.4, 0.4, 180, 0, 45] # position in meters and orientation in degrees (roll, pitch, yaw)
-  ready_duration_sec: 5.0
+  ready_ee_pose: [0.0, 0.45, 0.5, 180, 0, 45]
+  ready_duration_sec: 2.0
+  ready_joint_positions: [1.7026, -0.0901, -0.1763, -1.8991, -0.0258, 1.791, 0.7442]
+  ready_joint_duration_sec: 4.0
   max_queue_size: 256

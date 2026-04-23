@@ -1,0 +1,165 @@
+defaults:
+  - _self_
+  - task: univtac
+
+name: diff_c
+_target_: isp.workspace.train_diffusion_unet_hybrid_workspace.TrainDiffusionUnetHybridWorkspace
+
+exp_name: "default"
+
+dataset_root: /mnt/pfs/rmgf7p/tanzl/Kenny/code/visuotactile/data/UniVTAC
+data_split: clean
+task_name: lift_can
+n_demo: 100
+horizon: 16
+n_obs_steps: 2
+low_dim_obs_horizon: 2
+img_obs_horizon: 2
+n_action_steps: 8
+n_latency_steps: 0
+dataset_obs_steps: ${n_obs_steps}
+past_action_visible: False
+obs_as_global_cond: True
+dataset: isp.dataset.univtac_replay_image_dataset.UniVTACReplayImageDataset
+
+shape_meta:
+  obs:
+    robot0_eye_in_hand_image:
+      shape: [3, 84, 84]
+      horizon: ${img_obs_horizon}
+      type: rgb
+    robot0_eef_pos:
+      shape: [3]
+      horizon: ${low_dim_obs_horizon}
+    robot0_eef_quat:
+      shape: [4]
+      horizon: ${low_dim_obs_horizon}
+    robot0_gripper_qpos:
+      shape: [2]
+      horizon: ${low_dim_obs_horizon}
+  action:
+    shape: [10]
+
+policy:
+  _target_: isp.policy.diffusion_unet_pretrained_policy.DiffusionUnetPretrainedPolicy
+
+  shape_meta: ${shape_meta}
+
+  noise_scheduler:
+    _target_: diffusers.schedulers.scheduling_ddpm.DDPMScheduler
+    num_train_timesteps: 100
+    beta_start: 0.0001
+    beta_end: 0.02
+    beta_schedule: squaredcos_cap_v2
+    variance_type: fixed_small # Yilun's paper uses fixed_small_log instead, but easy to cause Nan
+    clip_sample: True # required when predict_epsilon=False
+    prediction_type: epsilon # or sample
+
+  obs_encoder:
+    _target_: isp.model.vision.timm_obs_encoder.TimmObsEncoder
+    shape_meta: ${shape_meta}
+    model_name: "resnet18.tv_in1k"
+    pretrained: False
+    frozen: False
+    global_pool: ""
+    feature_aggregation: "spatial_softmax"
+    position_encording: "sinusoidal"
+    downsample_ratio: 32
+    transforms:
+      - _target_: isp.model.vision.timm_obs_encoder.TrainRandomTestCenterCrop
+        size: 76
+    use_group_norm: True
+    share_rgb_model: False
+    imagenet_norm: True
+
+  horizon: ${horizon}
+  n_action_steps: ${eval:'${n_action_steps}+${n_latency_steps}'}
+  n_obs_steps: ${n_obs_steps}
+  num_inference_steps: 100
+  obs_as_global_cond: ${obs_as_global_cond}
+  diffusion_step_embed_dim: 128
+  down_dims: [512, 1024, 2048]
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: True
+  rot_aug: False
+
+ema:
+  _target_: isp.model.diffusion.ema_model.EMAModel
+  update_after_step: 0
+  inv_gamma: 1.0
+  power: 0.75
+  min_value: 0.0
+  max_value: 0.9999
+
+dataloader:
+  batch_size: 64
+  num_workers: 16
+  shuffle: True
+  pin_memory: True
+  persistent_workers: True
+
+val_dataloader:
+  batch_size: 64
+  num_workers: 16
+  shuffle: False
+  pin_memory: True
+  persistent_workers: True
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 1.0e-4
+  betas: [0.95, 0.999]
+  eps: 1.0e-8
+  weight_decay: 1.0e-6
+
+training:
+  device: "cuda:0"
+  seed: 0
+  debug: False
+  resume: True
+  lr_scheduler: cosine
+  lr_warmup_steps: 500
+  num_epochs: 300
+  gradient_accumulate_every: 1
+  use_ema: True
+  checkpoint_every: ${eval:'1000 / ${n_demo}'}
+  val_every: 1
+  sample_every: 5
+  max_train_steps: null
+  max_val_steps: null
+  log_every_steps: 10
+  cudnn_benchmark: True
+  tqdm_interval_sec: 1.0
+
+logging:
+  project: isp_${task_name}
+  entity: roccendalanda-cuhk
+  resume: True
+  mode: online
+  name: diff_c_demo${n_demo}
+  tags: ["${name}", "${task_name}", "${exp_name}"]
+  id: null
+  group: null
+
+checkpoint:
+  topk:
+    monitor_key: val_loss
+    mode: min
+    k: 2
+    format_str: 'epoch={epoch:04d}-val_loss={val_loss:.6f}.ckpt'
+  save_last_ckpt: True
+  save_last_snapshot: False
+
+multi_run:
+  run_dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}_demo${n_demo}
+  wandb_name_base: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}_demo${n_demo}
+
+hydra:
+  job:
+    override_dirname: ${name}
+  run:
+    dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}_demo${n_demo}
+  sweep:
+    dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}_demo${n_demo}
+    subdir: ${hydra.job.num}

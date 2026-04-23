@@ -43,7 +43,7 @@ conda activate vt-franka-workspace
 cd /home/zhenya/kenny/visuotact/vt_franka/robot_workspace
 vt-franka-workspace collect \
   --config /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/workspace.yaml \
-  --run fold_cloth
+  --run put_cup_on_plate
 ```
 
 Visualize:
@@ -53,7 +53,7 @@ conda activate vt-franka-workspace
 cd /home/zhenya/kenny/visuotact/vt_franka/robot_workspace
 vt-franka-workspace visualize \
   --config /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/workspace.yaml \
-  --episode-dir /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/runs/rotate_spoon_20260415_174623/episodes/episode_0000
+  --episode-dir /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/runs/put_cup_on_plate_20260422_171246/episodes/episode_0012
 ```
 
 Replay:
@@ -64,7 +64,7 @@ cd /home/zhenya/kenny/visuotact/vt_franka/robot_workspace
 vt-franka-workspace rollout-once \
   --config /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/workspace.yaml \
   --policy vt_franka_workspace.rollout.replay_policy:build_replay_policy \
-  --episode-dir /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/runs/fold_cloth_20260415_185010/episodes/episode_0000 \
+  --episode-dir /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/runs/put_bowl_on_plate_20260421_212945/episodes/episode_0000 \
   --go-ready
 ```
 

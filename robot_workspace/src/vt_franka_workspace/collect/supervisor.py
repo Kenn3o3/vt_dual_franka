@@ -18,6 +18,7 @@ from ..controller.client import ControllerClient
 from ..operator import ManagedUvicornServer, OperatorActionError, OperatorLogBuffer, OperatorSnapshot, create_operator_app
 from ..publishers.quest_udp import QuestUdpPublisher
 from ..publishers.state_bridge import StateBridge
+from ..reset import build_reset_command
 from ..recording import JsonlStreamRecorder, RunSessionManager, align_episode, analyze_episode
 from ..rollout.live_buffer import LiveSampleBuffer
 from ..sensors.rgb_camera import build_rgb_camera_recorder, resolve_rgb_camera_specs
@@ -393,7 +394,8 @@ class CollectSupervisor:
             self.teleop_service.set_teleop_enabled(False)
         LOGGER.info("Resetting robot pose to controller ready pose")
         try:
-            self.controller.ready()
+            command = build_reset_command(self.settings, source="collect_reset")
+            self.controller.reset(command)
         except Exception as exc:
             raise OperatorActionError(f"Failed to move robot to ready pose: {exc}") from exc
         self._reset_completed = True

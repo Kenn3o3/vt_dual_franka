@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import time
 
 import numpy as np
 import pytest
@@ -17,7 +18,7 @@ from vt_franka_workspace.settings import RgbCameraSettings, RolloutPolicyInputSe
 
 class FakeController:
     def __init__(self):
-        self.ready_calls = 0
+        self.reset_calls = []
         self.tcp_targets = []
         self.gripper_moves = []
         self.gripper_grasps = []
@@ -34,8 +35,9 @@ class FakeController:
     def get_state(self):
         return self.state
 
-    def ready(self):
-        self.ready_calls += 1
+    def reset(self, command):
+        self.reset_calls.append(command)
+        return {"status": "ok", "profile": command.profile, "path": "slow", "gripper_target": command.gripper_target}
 
     def queue_tcp(self, target_tcp, source="rollout"):
         self.tcp_targets.append((list(target_tcp), source))
@@ -87,6 +89,18 @@ class CountingPolicy:
 def make_settings(tmp_path: Path) -> WorkspaceSettings:
     return WorkspaceSettings(
         recording={"run_root": tmp_path / "runs", "image_format": "jpg"},
+        reset={
+            "default_profile": "ready",
+            "profiles": {
+                "ready": {
+                    "joint_positions": [0.0] * 7,
+                    "joint_duration_sec": 1.0,
+                    "eef_pose_xyz_rpy_deg": [0.4, 0.0, 0.3, 180.0, 0.0, 0.0],
+                    "eef_duration_sec": 1.0,
+                    "gripper_target": "open",
+                }
+            },
+        },
         rollout=RolloutSettings(
             control_hz=20.0,
             max_duration_sec=1.0,
@@ -116,13 +130,14 @@ def test_observation_assembler_records_exact_step_inputs(tmp_path: Path):
     rgb_camera = LiveSampleBuffer("rgb_third_person")
     gelsight_markers = LiveSampleBuffer("gelsight_markers")
     gelsight_frame = LiveSampleBuffer("gelsight_frame")
-    rgb_camera.update(np.zeros((4, 5, 3), dtype=np.uint8), metadata={"camera_name": "third_person"}, captured_wall_time=1.0)
+    now = time.time()
+    rgb_camera.update(np.zeros((4, 5, 3), dtype=np.uint8), metadata={"camera_name": "third_person"}, captured_wall_time=now)
     gelsight_markers.update(
         {"marker_locations": np.array([[0.1, 0.2]], dtype=np.float64), "marker_offsets": np.array([[0.0, 0.1]], dtype=np.float64)},
         metadata={"camera_name": "gel"},
-        captured_wall_time=1.1,
+        captured_wall_time=now + 0.1,
     )
-    gelsight_frame.update(np.zeros((3, 2, 3), dtype=np.uint8), metadata={"camera_name": "gel"}, captured_wall_time=1.2)
+    gelsight_frame.update(np.zeros((3, 2, 3), dtype=np.uint8), metadata={"camera_name": "gel"}, captured_wall_time=now + 0.2)
     assembler = ObservationAssembler(
         input_settings=RolloutPolicyInputSettings(
             controller_state=True,
@@ -199,6 +214,8 @@ def test_rollout_supervisor_blocks_start_before_reset(tmp_path: Path, monkeypatc
     assert supervisor._current_episode_dir is not None
     supervisor._wait_for_episode_finish_locked()
     assert policy.reset_calls == 1
+    assert controller.reset_calls[0].profile == "ready"
+    assert controller.reset_calls[0].gripper_target == "open"
 
 
 def test_rollout_supervisor_records_policy_steps_and_timeout_reason(tmp_path: Path, monkeypatch):

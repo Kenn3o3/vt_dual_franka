@@ -16,10 +16,11 @@ from vt_franka_workspace.settings import CollectSettings, RgbCameraSettings, Wor
 
 class FakeController:
     def __init__(self):
-        self.ready_calls = 0
+        self.reset_calls = []
 
-    def ready(self):
-        self.ready_calls += 1
+    def reset(self, command):
+        self.reset_calls.append(command)
+        return {"status": "ok", "profile": command.profile, "path": "slow", "gripper_target": command.gripper_target}
 
 
 class FakeStateMonitor:
@@ -73,6 +74,18 @@ def make_supervisor(tmp_path: Path) -> CollectSupervisor:
             status_print_hz=1000.0,
             require_quest_connection=True,
         ),
+        reset={
+            "default_profile": "ready",
+            "profiles": {
+                "ready": {
+                    "joint_positions": [0.0] * 7,
+                    "joint_duration_sec": 1.0,
+                    "eef_pose_xyz_rpy_deg": [0.4, 0.0, 0.3, 180.0, 0.0, 0.0],
+                    "eef_duration_sec": 1.0,
+                    "gripper_target": "open",
+                }
+            },
+        },
         rgb_cameras={"third_person": RgbCameraSettings(stream_name="rgb_third_person")},
         operator_ui={"enabled": False},
     )
@@ -103,6 +116,8 @@ def test_collect_supervisor_requires_reset_before_start(tmp_path: Path):
 
     assert supervisor._current_episode_dir is not None
     assert supervisor.teleop_service.is_teleop_enabled() is True
+    assert supervisor.controller.reset_calls[0].profile == "ready"
+    assert supervisor.controller.reset_calls[0].gripper_target == "open"
 
 
 def test_collect_supervisor_freezes_idle_snapshot_when_ready(tmp_path: Path):

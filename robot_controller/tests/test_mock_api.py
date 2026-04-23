@@ -39,6 +39,43 @@ def test_mock_controller_api_accepts_waypoint_and_reports_state():
         assert ready.status_code == 200
 
 
+def test_mock_controller_api_accepts_reset_command():
+    settings = ControllerSettings(
+        server=ServerSettings(host="127.0.0.1", port=18092),
+        backend=BackendSettings(kind="mock"),
+        control=ControlSettings(
+            control_frequency_hz=50.0,
+            teleop_command_hz=10.0,
+            ready_ee_pose=[0.4, 0.0, 0.3, 180.0, 0.0, 0.0],
+        ),
+    )
+    service = ControllerService(settings, MockFrankaBackend())
+    app = create_app(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/actions/reset",
+            json={
+                "profile": "ready",
+                "joint_positions": [0.0] * 7,
+                "joint_duration_sec": 0.1,
+                "eef_pose_xyz_rpy_deg": [0.4, 0.0, 0.3, 180.0, 0.0, 0.0],
+                "eef_duration_sec": 0.1,
+                "gripper_target": "open",
+                "gripper_width": 0.078,
+                "gripper_velocity": 0.1,
+                "gripper_force_limit": 7.0,
+                "source": "test",
+            },
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["profile"] == "ready"
+        assert payload["gripper_target"] == "open"
+        assert payload["path"] == "slow"
+
+
 def test_mock_controller_api_accepts_explicit_waypoint_duration():
     settings = ControllerSettings(
         server=ServerSettings(host="127.0.0.1", port=18092),
@@ -58,6 +95,54 @@ def test_mock_controller_api_accepts_explicit_waypoint_duration():
             },
         )
         assert response.status_code == 200
+
+
+def test_mock_controller_api_rejects_streaming_commands_during_reset():
+    class BlockingResetBackend(MockFrankaBackend):
+        def go_home(self, ee_pose, duration_sec):
+            super().go_home(ee_pose, duration_sec)
+            import time
+
+            time.sleep(0.2)
+
+    settings = ControllerSettings(
+        server=ServerSettings(host="127.0.0.1", port=18092),
+        backend=BackendSettings(kind="mock"),
+        control=ControlSettings(control_frequency_hz=50.0, teleop_command_hz=60.0),
+    )
+    service = ControllerService(settings, BlockingResetBackend())
+    app = create_app(service)
+
+    with TestClient(app) as client:
+        import threading
+
+        result = {}
+
+        def run_reset():
+            result["reset"] = client.post(
+                "/api/v1/actions/reset",
+                json={
+                    "profile": "ready",
+                    "eef_pose_xyz_rpy_deg": [0.4, 0.0, 0.3, 180.0, 0.0, 0.0],
+                    "eef_duration_sec": 0.1,
+                    "gripper_target": "unchanged",
+                    "source": "test",
+                },
+            )
+
+        thread = threading.Thread(target=run_reset)
+        thread.start()
+        import time
+
+        time.sleep(0.05)
+        response = client.post(
+            "/api/v1/commands/tcp",
+            json={"target_tcp": [0.4, 0.1, 0.3, 1.0, 0.0, 0.0, 0.0], "source": "test"},
+        )
+        thread.join(timeout=1.0)
+
+        assert response.status_code == 409
+        assert result["reset"].status_code == 200
 
 
 def test_demo_state_app_reports_state_and_legacy_payload():

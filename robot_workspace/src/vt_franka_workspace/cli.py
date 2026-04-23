@@ -19,6 +19,7 @@ from .demo_publish import DemoPublisher
 from .operator import OperatorLogBuffer, install_operator_logging
 from .publishers.quest_udp import QuestUdpPublisher
 from .publishers.state_bridge import StateBridge
+from .reset import build_reset_command
 from .recording import JsonlStreamRecorder, align_episode
 from .rollout.real_env import RealWorldEnv
 from .rollout.real_runner import RealRunner
@@ -243,7 +244,7 @@ def main() -> None:
         if args.go_ready and args.go_home:
             raise SystemExit("Cannot use --go-ready and --go-home together")
         if args.go_ready:
-            controller.ready()
+            controller.reset(build_reset_command(settings, source="rollout_once_reset"))
             time.sleep(1.0)
         if args.go_home:
             controller.home()

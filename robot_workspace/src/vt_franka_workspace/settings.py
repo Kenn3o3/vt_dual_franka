@@ -164,6 +164,22 @@ class CalibrationSettings(BaseModel):
     calibration_dir: Path = Path("config/calibration/v6")
 
 
+class ResetProfileSettings(BaseModel):
+    joint_positions: list[float] | None = None
+    joint_duration_sec: float | None = None
+    eef_pose_xyz_rpy_deg: list[float] | None = None
+    eef_duration_sec: float | None = None
+    gripper_target: Literal["open", "closed", "unchanged"] = "open"
+    gripper_width: float | None = None
+    gripper_velocity: float | None = None
+    gripper_force_limit: float | None = None
+
+
+class ResetSettings(BaseModel):
+    default_profile: str = "ready"
+    profiles: dict[str, ResetProfileSettings] = Field(default_factory=dict)
+
+
 class RolloutPolicyInputSettings(BaseModel):
     controller_state: bool = True
     rgb_cameras: list[str] = Field(default_factory=list)
@@ -199,4 +215,5 @@ class WorkspaceSettings(BaseModel):
     collect: CollectSettings = Field(default_factory=CollectSettings)
     auto_collect: AutoCollectSettings = Field(default_factory=AutoCollectSettings)
     calibration: CalibrationSettings = Field(default_factory=CalibrationSettings)
+    reset: ResetSettings = Field(default_factory=ResetSettings)
     rollout: RolloutSettings = Field(default_factory=RolloutSettings)

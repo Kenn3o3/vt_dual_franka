@@ -6,7 +6,7 @@ from typing import Any
 
 import requests
 
-from vt_franka_shared.models import ControllerState, GripperGraspCommand, GripperWidthCommand, TcpTargetCommand
+from vt_franka_shared.models import ControllerState, GripperGraspCommand, GripperWidthCommand, ResetCommand, TcpTargetCommand
 
 
 class ControllerClientError(RuntimeError):
@@ -52,6 +52,21 @@ class ControllerClient:
                 raise ControllerClientError(
                     "Controller API does not support /api/v1/actions/ready. "
                     "Restart vt-franka-controller on the controller PC after updating it, or use --go-home / omit --go-ready."
+                ) from exc
+            raise
+
+    def reset(self, command: ResetCommand) -> dict[str, Any]:
+        try:
+            return self._post_json(
+                "/api/v1/actions/reset",
+                command.model_dump(mode="json"),
+                timeout_sec=max(self.request_timeout_sec, 30.0),
+            )
+        except ControllerClientError as exc:
+            if "404" in str(exc):
+                raise ControllerClientError(
+                    "Controller API does not support /api/v1/actions/reset. "
+                    "Restart vt-franka-controller on the controller PC after updating it."
                 ) from exc
             raise
 

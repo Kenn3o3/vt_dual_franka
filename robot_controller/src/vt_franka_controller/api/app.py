@@ -5,9 +5,9 @@ from typing import Any, Dict
 
 from fastapi import FastAPI, HTTPException
 
-from vt_franka_shared.models import GripperGraspCommand, GripperWidthCommand, TcpTargetCommand
+from vt_franka_shared.models import GripperGraspCommand, GripperWidthCommand, ResetCommand, TcpTargetCommand
 
-from ..control.service import ControllerService
+from ..control.service import ControllerBusyError, ControllerService
 
 
 def create_app(service: ControllerService) -> FastAPI:
@@ -35,28 +35,51 @@ def create_app(service: ControllerService) -> FastAPI:
 
     @app.post("/api/v1/commands/tcp")
     def move_tcp(command: TcpTargetCommand):
-        service.queue_tcp_command(command)
+        try:
+            service.queue_tcp_command(command)
+        except ControllerBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"status": "queued"}
 
     @app.post("/api/v1/commands/gripper/width")
     def move_gripper(command: GripperWidthCommand):
-        service.queue_gripper_width_command(command)
+        try:
+            service.queue_gripper_width_command(command)
+        except ControllerBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"status": "queued"}
 
     @app.post("/api/v1/commands/gripper/grasp")
     def grasp_gripper(command: GripperGraspCommand):
-        service.queue_gripper_grasp_command(command)
+        try:
+            service.queue_gripper_grasp_command(command)
+        except ControllerBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"status": "queued"}
+
+    @app.post("/api/v1/actions/reset")
+    def reset(command: ResetCommand):
+        try:
+            return service.run_reset(command)
+        except ControllerBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.post("/api/v1/actions/home")
     def go_home():
-        service.go_home()
+        try:
+            service.go_home()
+        except ControllerBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {"status": "ok"}
 
     @app.post("/api/v1/actions/ready")
     def go_ready():
         try:
             service.go_ready()
+        except ControllerBusyError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except RuntimeError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"status": "ok"}

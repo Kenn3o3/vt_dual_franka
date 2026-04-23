@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import time
 import re
+import time
 from collections.abc import Mapping, Sequence
-from typing import Any, List, Optional
+from typing import Any, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -49,6 +49,42 @@ class GripperGraspCommand(BaseModel):
     issued_at_wall_time: float = Field(default_factory=time.time)
     issued_at_monotonic_time: float = Field(default_factory=time.monotonic)
     source: str = "unknown"
+
+
+class ResetCommand(BaseModel):
+    profile: str = "ready"
+    joint_positions: Optional[List[float]] = None
+    joint_duration_sec: Optional[float] = None
+    eef_pose_xyz_rpy_deg: Optional[List[float]] = None
+    eef_duration_sec: Optional[float] = None
+    gripper_target: Literal["open", "closed", "unchanged"] = "unchanged"
+    gripper_width: Optional[float] = None
+    gripper_velocity: Optional[float] = None
+    gripper_force_limit: Optional[float] = None
+    issued_at_wall_time: float = Field(default_factory=time.time)
+    issued_at_monotonic_time: float = Field(default_factory=time.monotonic)
+    source: str = "unknown"
+
+    @field_validator("joint_positions")
+    @classmethod
+    def _validate_joint_positions(cls, value: Optional[List[float]]) -> Optional[List[float]]:
+        if value is None:
+            return value
+        return _fixed_length(value, 7, "joint_positions")
+
+    @field_validator("eef_pose_xyz_rpy_deg")
+    @classmethod
+    def _validate_eef_pose(cls, value: Optional[List[float]]) -> Optional[List[float]]:
+        if value is None:
+            return value
+        return _fixed_length(value, 6, "eef_pose_xyz_rpy_deg")
+
+    @field_validator("joint_duration_sec", "eef_duration_sec", "gripper_velocity", "gripper_force_limit", "gripper_width")
+    @classmethod
+    def _validate_positive_optional(cls, value: Optional[float], info) -> Optional[float]:
+        if value is not None and value <= 0.0:
+            raise ValueError(f"{info.field_name} must be positive when provided")
+        return value
 
 
 class ControllerState(BaseModel):

@@ -44,5 +44,9 @@ class FrankaBackend(ABC):
         raise NotImplementedError
 
     @abstractmethod
+    def move_to_joints(self, joint_positions: Sequence[float], duration_sec: float | None = None) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     def shutdown(self) -> None:
         raise NotImplementedError

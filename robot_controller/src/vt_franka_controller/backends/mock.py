@@ -69,5 +69,8 @@ class MockFrankaBackend(FrankaBackend):
             self._pose6d = np.concatenate([ee_pose[:3], np.deg2rad(ee_pose[3:])])
         time.sleep(min(duration_sec, 0.01))
 
+    def move_to_joints(self, joint_positions: Sequence[float], duration_sec: float | None = None) -> None:
+        time.sleep(min(duration_sec or 0.01, 0.01))
+
     def shutdown(self) -> None:
         self._impedance_started = False
