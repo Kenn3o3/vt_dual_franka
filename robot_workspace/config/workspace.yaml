@@ -182,6 +182,10 @@ calibration:
 reset:
   default_profile: ready
   profiles:
+    joint_ready:
+      joint_positions: [1.7026, -0.0901, -0.1763, -1.8991, -0.0258, 1.791, 0.7442]
+      joint_duration_sec: 4.0
+      gripper_target: unchanged
     ready:
       eef_pose_xyz_rpy_deg: [0.0, 0.45, 0.5, 180.0, 0.0, 45.0]
       eef_duration_sec: 2.0

@@ -36,6 +36,7 @@ def main() -> None:
         "command",
         choices=[
             "demo-publish",
+            "reset",
             "teleop",
             "state-bridge",
             "gelsight",
@@ -56,6 +57,12 @@ def main() -> None:
     parser.add_argument("--skip-gripper", action="store_true", help="Replay-policy TCP only")
     parser.add_argument("--go-ready", action="store_true", help="Move robot to ready pose before rollout")
     parser.add_argument("--go-home", action="store_true", help="Move robot to home pose before rollout")
+    parser.add_argument("--profile", default=None, help="Reset profile name for the reset command")
+    parser.add_argument(
+        "--controller-ready",
+        action="store_true",
+        help="Use the controller-side ready action for the reset command",
+    )
     parser.add_argument("--with-gelsight", action="store_true", help="Force-enable GelSight for collect mode")
     parser.add_argument("--without-gelsight", action="store_true", help="Force-disable GelSight for collect mode")
     parser.add_argument(
@@ -128,6 +135,15 @@ def main() -> None:
         port=settings.controller.port,
         request_timeout_sec=settings.controller.request_timeout_sec,
     )
+    if args.command == "reset":
+        _run_reset_command(
+            controller,
+            settings,
+            profile_name=args.profile,
+            controller_ready=args.controller_ready,
+        )
+        return
+
     calibration = SingleArmCalibration.from_dir(settings.calibration.calibration_dir)
     quest_publisher = QuestUdpPublisher(
         quest_ip=settings.quest_feedback.quest_ip,
@@ -269,6 +285,39 @@ def main() -> None:
         runner = RealRunner(env, control_hz, max_duration_sec)
         runner.run(policy)
         return
+
+
+def _run_reset_command(
+    controller: ControllerClient,
+    settings: WorkspaceSettings,
+    *,
+    profile_name: str | None,
+    controller_ready: bool,
+) -> None:
+    if controller_ready and profile_name is not None:
+        raise SystemExit("Cannot use --profile and --controller-ready together")
+
+    if controller_ready:
+        controller.ready()
+        print("Controller ready action completed.")
+        return
+
+    try:
+        command = build_reset_command(
+            settings,
+            source="workspace_cli_reset",
+            profile_name=profile_name,
+        )
+    except KeyError as exc:
+        raise SystemExit(exc.args[0]) from exc
+
+    result = controller.reset(command)
+    print(
+        "Workspace reset completed: "
+        f"profile={result.get('profile', command.profile)} "
+        f"path={result.get('path', 'unknown')} "
+        f"gripper_target={result.get('gripper_target', command.gripper_target)}"
+    )
 
 
 def _load_and_resolve_settings(config_path: str | Path) -> WorkspaceSettings:
