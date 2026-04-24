@@ -90,6 +90,7 @@ class ControllerClient:
     def _post_json(self, path: str, payload: dict[str, Any], timeout_sec: float | None = None) -> dict[str, Any]:
         timeout = self.request_timeout_sec if timeout_sec is None else timeout_sec
         last_exc: requests.RequestException | None = None
+        last_detail: str | None = None
         for attempt in range(2):
             try:
                 response = self._session.post(
@@ -101,13 +102,22 @@ class ControllerClient:
                 return response.json()
             except requests.RequestException as exc:
                 last_exc = exc
+                response = getattr(exc, "response", None)
+                if response is not None:
+                    try:
+                        payload = response.json()
+                    except ValueError:
+                        payload = None
+                    if isinstance(payload, dict) and payload.get("detail"):
+                        last_detail = str(payload["detail"])
                 if attempt > 0:
                     break
                 self._reset_thread_session()
                 time.sleep(0.02)
             except ValueError as exc:
                 raise ControllerClientError(f"POST {self.base_url}{path} returned invalid JSON") from exc
-        raise ControllerClientError(f"POST {self.base_url}{path} failed: {last_exc}") from last_exc
+        detail_suffix = f" (detail: {last_detail})" if last_detail else ""
+        raise ControllerClientError(f"POST {self.base_url}{path} failed: {last_exc}{detail_suffix}") from last_exc
 
     @property
     def _session(self) -> requests.Session:
