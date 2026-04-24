@@ -85,3 +85,7 @@ PYTHONPATH=/home/zhenya/kenny/visuotact/vt_franka:$PYTHONPATH \
 请你专注看vt_franka这个repo的训练和推理pipeline。帮我看看现在的代码算不算工整（clean and modular），还是写的很乱。
 
 我之后的代码还需要扩展到更多模型包括/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/third_parties/mpd 里面的模型
+
+我自己的体会是policy eval和data collection公用同一套folder structure会有问题: 应该把policy rollout的数据防到一个固定的folder structure里面 比如eval/policy name/task name date time 等等
+
+还需要考虑到之后扩展到不同policies的兼容问题.

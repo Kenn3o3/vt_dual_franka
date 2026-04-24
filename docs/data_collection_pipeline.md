@@ -68,6 +68,64 @@ vt-franka-workspace rollout-once \
   --go-ready
 ```
 
+reset joints (on controller):
+```bash
+conda activate polymetis-local
+cd /home/medair/vt_franka/robot_controller
+python scripts/joint_reset.py --config /home/medair/vt_franka/robot_controller/config/controller.yaml
+```
+
+### 3.3 Upload A Folder To ModelScope
+
+Use the repo helper script:
+
+```bash
+cd /home/zhenya/kenny/visuotact/vt_franka
+```
+
+Set the upload parameters:
+
+```bash
+export MODELSCOPE_TOKEN='ms-f6ff6aaf-8cd2-4aed-b57d-c0be1e7799aa' # It is ok to expose this token here
+export MODELSCOPE_REPO_ID='kenn3o3/put_cup_on_plate'
+export MODELSCOPE_VISIBILITY='private'
+export MODELSCOPE_BATCH_SIZE=64
+export MODELSCOPE_MAX_WORKERS=4
+export MODELSCOPE_RESUME=1
+```
+
+Dry run first:
+
+```bash
+export MODELSCOPE_DRY_RUN=1
+
+bash kenny/scripts/upload_data_to_modelscope.sh \
+  robot_workspace/data/mpd/put_cup_on_plate \
+  /
+```
+
+Real upload:
+
+```bash
+unset MODELSCOPE_DRY_RUN
+
+bash kenny/scripts/upload_data_to_modelscope.sh \
+  robot_workspace/data/mpd/put_cup_on_plate \
+  /
+```
+
+Notes:
+
+- First argument is the local folder to upload.
+- Second argument is the destination path inside the ModelScope repo.
+- Use `/` to upload the folder contents to the repo root.
+- Use `put_cup_on_plate` instead of `/` if you want the remote repo to contain a nested `put_cup_on_plate/` directory.
+- `MODELSCOPE_BATCH_SIZE` controls how many files are uploaded per commit batch.
+- `MODELSCOPE_MAX_WORKERS` controls concurrent uploads inside one batch. `2` to `4` is a reasonable range.
+- `MODELSCOPE_RESUME=1` makes the script list remote files first and skip files that are already committed.
+- If ModelScope returns a transient `502` or timeout, rerun the same command. The script is designed for resume/retry.
+- The script path is `kenny/scripts/upload_data_to_modelscope.sh`.
+
 This enters an operator mode with:
 
 - health checks
