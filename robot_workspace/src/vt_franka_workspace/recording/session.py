@@ -18,24 +18,26 @@ class RunSessionManager:
     def start_run(self, name: str, metadata: dict[str, Any] | None = None, *, resume: bool = True) -> Path:
         if self._run_dir is not None:
             return self._run_dir
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
         slug = _slugify(name) or "run"
-        if resume:
-            latest_run_dir = self._find_latest_run_dir(slug)
-            if latest_run_dir is not None:
-                self._ensure_latest_episode_finished(latest_run_dir)
-                manifest = self._read_json(latest_run_dir / "run_manifest.json")
-                manifest.setdefault("metadata", {})
-                if metadata:
-                    manifest["metadata"].update(metadata)
-                manifest["resumed_at_wall_time"] = time.time()
-                self._write_json(latest_run_dir / "run_manifest.json", manifest)
-                self._run_dir = latest_run_dir
-                self._run_manifest = manifest
-                return latest_run_dir
+        run_id = slug
+        run_dir = self.root_dir / run_id
+        if run_dir.exists():
+            if not run_dir.is_dir():
+                raise NotADirectoryError(f"Run path exists and is not a directory: {run_dir}")
+            if not resume:
+                raise FileExistsError(f"Run directory already exists: {run_dir}")
+            self._ensure_latest_episode_finished(run_dir)
+            manifest = self._read_json(run_dir / "run_manifest.json")
+            manifest.setdefault("metadata", {})
+            if metadata:
+                manifest["metadata"].update(metadata)
+            manifest["resumed_at_wall_time"] = time.time()
+            self._write_json(run_dir / "run_manifest.json", manifest)
+            self._run_dir = run_dir
+            self._run_manifest = manifest
+            return run_dir
 
-        run_id = f"{slug}_{timestamp}"
-        self._run_dir = self.root_dir / run_id
+        self._run_dir = run_dir
         episodes_dir = self._run_dir / "episodes"
         episodes_dir.mkdir(parents=True, exist_ok=False)
 
@@ -164,12 +166,6 @@ class RunSessionManager:
     @staticmethod
     def _write_json(path: Path, payload: dict[str, Any]) -> None:
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-
-    def _find_latest_run_dir(self, slug: str) -> Path | None:
-        candidates = sorted(path for path in self.root_dir.glob(f"{slug}_*") if path.is_dir())
-        if not candidates:
-            return None
-        return candidates[-1]
 
     def _ensure_latest_episode_finished(self, run_dir: Path) -> None:
         episode_dirs = self._list_episode_dirs(run_dir)

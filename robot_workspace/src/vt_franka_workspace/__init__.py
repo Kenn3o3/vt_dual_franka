@@ -1,6 +1,3 @@
-from .controller.client import ControllerClient
-from .settings import WorkspaceSettings
-from .teleop.quest_server import QuestTeleopService, create_teleop_app
+"""Clean workspace-side runtime for VT Franka data collection and policy execution."""
 
-__all__ = ["ControllerClient", "QuestTeleopService", "WorkspaceSettings", "create_teleop_app"]
-
+__version__ = "0.1.0"

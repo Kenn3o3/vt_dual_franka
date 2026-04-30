@@ -1,124 +1,64 @@
+from __future__ import annotations
+
 from pathlib import Path
 
 import numpy as np
 
-from vt_franka_workspace.rollout.replay_policy import (
-    build_replay_policy,
-    build_step_replay_policy,
-    infer_sync_hz,
-    load_replay_episode,
-)
-from vt_franka_workspace.settings import TeleopSettings
+from vt_franka_workspace.config import InferenceRuntimeSettings, PolicyConfig, WorkspaceSettings
+from vt_franka_workspace.policies import resolve_policy
+from vt_franka_workspace.policies.replay.policy import ReplayPolicy, load_replay_episode
 
 
-def test_infer_sync_hz_from_timestamps():
-    timestamps = np.array([0.0, 0.1, 0.2, 0.3], dtype=np.float64)
-    assert infer_sync_hz(timestamps) == 10.0
+def write_aligned_episode(episode_dir: Path) -> Path:
+    episode_dir.mkdir(parents=True)
+    path = episode_dir / "aligned_episode.npz"
+    np.savez(
+        path,
+        timestamps=np.asarray([1.0, 1.1, 1.2], dtype=np.float64),
+        teleop_target_tcp=np.asarray(
+            [
+                [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
+                [0.2, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
+                [0.3, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
+            ],
+            dtype=np.float64,
+        ),
+        teleop_gripper_closed=np.asarray([False, True, True], dtype=bool),
+    )
+    return path
 
 
 def test_load_replay_episode_reads_aligned_npz(tmp_path: Path):
-    path = tmp_path / "aligned_episode.npz"
-    np.savez_compressed(
-        path,
-        timestamps=np.array([0.0, 0.1, 0.2], dtype=np.float64),
-        teleop_target_tcp=np.array(
-            [
-                [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
-                [0.2, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
-                [0.3, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
-            ],
-            dtype=np.float64,
-        ),
-        teleop_gripper_closed=np.array([False, True, True], dtype=bool),
-        teleop_command_source_timestamps=np.array([0.05, 0.15, 0.25], dtype=np.float64),
-    )
+    episode_dir = tmp_path / "episode_0000"
+    write_aligned_episode(episode_dir)
 
-    episode = load_replay_episode(path)
-    assert episode.hz == 10.0
+    episode = load_replay_episode(episode_dir)
+
     assert episode.target_tcp.shape == (3, 7)
     assert episode.gripper_closed.tolist() == [False, True, True]
+    assert episode.timestamps.tolist() == [1.0, 1.1, 1.2]
 
 
-def test_build_replay_policy_returns_sequenced_actions(tmp_path: Path):
-    path = tmp_path / "aligned_episode.npz"
-    np.savez_compressed(
-        path,
-        timestamps=np.array([10.0, 10.1, 10.2], dtype=np.float64),
-        teleop_target_tcp=np.array(
-            [
-                [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
-                [0.2, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
-                [0.3, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
-            ],
-            dtype=np.float64,
-        ),
-        teleop_gripper_closed=np.array([False, True, True], dtype=bool),
-        teleop_command_source_timestamps=np.array([10.05, 10.15, 10.25], dtype=np.float64),
-    )
+def test_replay_policy_returns_unified_action_dicts(tmp_path: Path):
+    episode_dir = tmp_path / "episode_0000"
+    write_aligned_episode(episode_dir)
+    policy = ReplayPolicy(load_replay_episode(episode_dir), chunk_size=2, gripper_open_width=0.078)
 
-    policy = build_replay_policy(
-        episode_dir=path,
-        hz=10.0,
-        speed_scale=1.0,
-        skip_gripper=False,
-        teleop_settings=TeleopSettings(),
-    )
+    actions0 = policy.predict([])
+    actions1 = policy.predict([])
 
-    assert policy.__vt_franka_control_hz__ == 10.0
-    action0 = policy({})
-    action1 = policy({})
-    assert action0["target_tcp"] == [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0]
-    assert "gripper_width" in action0
-    assert action1["target_tcp"] == [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0]
+    assert actions0[0]["target_tcp"] == [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0]
+    assert actions0[0]["gripper_width"] == 0.078
+    assert actions0[1]["gripper_closed"] is True
+    assert actions1[0]["target_tcp"] == [0.3, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0]
+    assert actions1[0]["terminate"] is True
 
 
-def test_build_replay_policy_requires_episode_dir():
-    try:
-        build_replay_policy(teleop_settings=TeleopSettings())
-    except ValueError as exc:
-        assert "episode-dir" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError when episode_dir is missing")
+def test_registry_resolves_replay_policy(tmp_path: Path):
+    episode_dir = tmp_path / "episode_0000"
+    write_aligned_episode(episode_dir)
+    policy_config = PolicyConfig(type="replay", config={"episode_dir": str(episode_dir), "chunk_size": 1})
 
+    policy = resolve_policy(policy_config, InferenceRuntimeSettings(), WorkspaceSettings())
 
-def test_build_step_replay_policy_advances_one_action_per_call(tmp_path: Path):
-    path = tmp_path / "aligned_episode.npz"
-    np.savez_compressed(
-        path,
-        timestamps=np.array([10.0, 10.1, 10.2], dtype=np.float64),
-        teleop_target_tcp=np.array(
-            [
-                [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
-                [0.2, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
-                [0.3, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
-            ],
-            dtype=np.float64,
-        ),
-        teleop_gripper_closed=np.array([False, True, True], dtype=bool),
-    )
-
-    policy = build_step_replay_policy(
-        episode_dir=path,
-        hz=10.0,
-        speed_scale=1.0,
-        skip_gripper=False,
-        teleop_settings=TeleopSettings(),
-    )
-
-    assert policy.__vt_franka_control_hz__ == 10.0
-    action0 = policy({})
-    action1 = policy({})
-    action2 = policy({})
-    assert action0["target_tcp"] == [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0]
-    assert action1["target_tcp"] == [0.2, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0]
-    assert action2["target_tcp"] == [0.3, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0]
-    assert action2["terminate"] is True
-
-
-def test_build_step_replay_policy_requires_episode_dir():
-    try:
-        build_step_replay_policy(teleop_settings=TeleopSettings())
-    except ValueError as exc:
-        assert "episode-dir" in str(exc)
-    else:
-        raise AssertionError("Expected ValueError when episode_dir is missing")
+    assert isinstance(policy, ReplayPolicy)

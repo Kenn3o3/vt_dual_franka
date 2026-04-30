@@ -1,0 +1,7 @@
+type: mpd
+checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/put_cup_on_plate/mpd/fm/fm_state/best_model.pth
+config:
+  algorithm: fm
+  task_name: put_cup_on_plate
+  policy_name: fm_state
+  device: cuda

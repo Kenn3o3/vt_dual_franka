@@ -205,18 +205,46 @@ class QuestTeleopService:
             raise RuntimeError("tracking start pose is not initialized")
 
         target = np.zeros(7, dtype=np.float64)
-        target[:3] = (
-            self.settings.relative_translation_scale * (current_hand_pose[:3] - self._start_hand_tcp[:3])
-            + self._start_real_tcp[:3]
+        raw_translation_delta = current_hand_pose[:3] - self._start_hand_tcp[:3]
+        # Old behavior used the calibrated robot-frame translation directly:
+        # translation_delta = raw_translation_delta
+        # Live standardized setup tests: moving the handheld controller forward
+        # first made the robot move left, so swap X/Y translation channels. The
+        # robot Y/forward axis then tested reversed, so flip the swapped Y
+        # output. Keep the rotation mapping below unchanged because it tested
+        # correctly.
+        translation_delta = np.array(
+            [raw_translation_delta[1], -raw_translation_delta[0], raw_translation_delta[2]], dtype=np.float64
         )
+        target[:3] = self.settings.relative_translation_scale * translation_delta + self._start_real_tcp[:3]
         current_rotation = Rotation.from_quat(_wxyz_to_xyzw(current_hand_pose[3:]))
         start_rotation = Rotation.from_quat(_wxyz_to_xyzw(self._start_hand_tcp[3:]))
         robot_start_rotation = Rotation.from_quat(_wxyz_to_xyzw(self._start_real_tcp[3:]))
         relative_rotation = current_rotation * start_rotation.inv()
+        # Old behavior used the rotvec directly:
+        # rotvec = relative_rotation.as_rotvec()
+        # First correction kept as a comment for debugging history:
+        # rotvec = np.array([raw_rotvec[1], raw_rotvec[0], raw_rotvec[2]], dtype=np.float64)
+        # Second correction kept as a comment for debugging history:
+        # rotvec = np.array([-raw_rotvec[1], -raw_rotvec[0], raw_rotvec[2]], dtype=np.float64)
+        # Third correction kept as a comment for debugging history:
+        # rotvec = np.array([raw_rotvec[0], -raw_rotvec[1], raw_rotvec[2]], dtype=np.float64)
+        # Fourth correction kept as a comment for debugging history:
+        # rotvec = np.array([-raw_rotvec[1], raw_rotvec[2], raw_rotvec[0]], dtype=np.float64)
+        # Fifth correction kept as a comment for debugging history:
+        # rotvec = np.array([raw_rotvec[2], raw_rotvec[0], -raw_rotvec[1]], dtype=np.float64)
+        # Sixth correction kept as a comment for debugging history:
+        # rotvec = np.array([-raw_rotvec[1], -raw_rotvec[0], raw_rotvec[2]], dtype=np.float64)
+        # A later standardized setup test showed the translation -Y issue above
+        # was not a rotation issue; only roll/X rotation was opposite. Flip the
+        # roll output sign from the sixth correction while preserving its axes.
+        raw_rotvec = relative_rotation.as_rotvec()
+        rotvec = np.array([raw_rotvec[1], -raw_rotvec[0], raw_rotvec[2]], dtype=np.float64)
         scale = self.settings.relative_rotation_scale
         if scale < 1.0:
-            rotvec = relative_rotation.as_rotvec()
             relative_rotation = Rotation.from_rotvec(rotvec * scale)
+        else:
+            relative_rotation = Rotation.from_rotvec(rotvec)
         target_rotation = relative_rotation * robot_start_rotation
         quat_xyzw = target_rotation.as_quat()
         target[3:] = [quat_xyzw[3], quat_xyzw[0], quat_xyzw[1], quat_xyzw[2]]

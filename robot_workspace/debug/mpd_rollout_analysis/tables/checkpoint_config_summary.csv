@@ -1,0 +1,5 @@
+policy,run_dir,algorithm_dir,method_name,root_method_name,epochs,batch_size,t_obs,t_pred,t_act,predict_past,device,initial_values_come_from_action_data,initial_position_keys,initial_velocity_keys,has_best_model,has_scaler_values,has_dataset_manifest,has_train_log,train_log_bytes,parsed_loss_count,parsed_loss_min,parsed_loss_last
+dp_state,/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/train/mpd/dp/dp_state,dp,,dp_transformer,300,128,3,12,12,True,cuda,,,,True,True,True,True,3240903,35592,0.02079,0.0326
+sfp_state,/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/train/mpd/sfp/sfp_state,sfp,,sfp_transformer,300,128,3,12,12,True,cuda,,,,True,True,True,True,3251550,35612,0.05069,0.0686
+mpd_state,/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/train/mpd/mpd/mpd_state,mpd,,mpd-transformer,300,128,3,12,12,False,cuda,False,agent_pos,agent_vel,True,True,True,True,3291066,36060,0.01933,0.023
+motif_state,/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/train/mpd/motif/motif_state,motif,,motif,300,128,3,12,12,False,cuda,False,agent_pos,agent_vel,True,True,True,True,3237258,35545,0.2364,0.54334

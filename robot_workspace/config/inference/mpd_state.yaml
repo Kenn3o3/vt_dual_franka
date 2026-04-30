@@ -1,0 +1,22 @@
+obs_horizon: 3
+exe_horizon: 8
+control_hz: 10.0
+max_duration_sec: 30.0
+start_countdown_sec: 2.0
+status_print_hz: 1.0
+task_name: put_cup_on_plate
+initial_eef_pose_xyz_rpy_deg: [0.0, 0.45, 0.5, 180.0, 0.0, 45.0]
+initial_move_duration_sec: 2.0
+
+modality:
+  proprioception: true
+  rgb_cameras: []
+  gelsight_markers: false
+  gelsight_frame: false
+  controller_state_max_age_sec: 2.0
+  rgb_camera_max_age_sec: 2.0
+  gelsight_max_age_sec: 2.0
+
+rgb_cameras: {}
+gelsight:
+  enabled: false

@@ -6,7 +6,7 @@ import time
 from threading import Event
 from typing import Any
 
-from ...rollout.live_buffer import LiveSampleBuffer
+from ...runtime.live_buffer import LiveSampleBuffer
 from ...recording.raw_recorder import JsonlStreamRecorder
 from ...publishers.quest_udp import QuestUdpPublisher
 from ...settings import RgbCameraSettings

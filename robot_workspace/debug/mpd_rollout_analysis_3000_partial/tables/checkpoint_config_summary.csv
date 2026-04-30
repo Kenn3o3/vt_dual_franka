@@ -1,0 +1,5 @@
+policy,run_dir,algorithm_dir,method_name,root_method_name,epochs,batch_size,t_obs,t_pred,t_act,predict_past,device,initial_values_come_from_action_data,initial_position_keys,initial_velocity_keys,has_best_model,has_scaler_values,has_dataset_manifest,has_train_log,train_log_bytes,parsed_loss_count,parsed_loss_min,parsed_loss_last,error
+dp_state,/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/train/mpd/dp/dp_state,dp,,dp_transformer,3000,128,3,12,12,True,cuda,,,,True,True,True,True,21280713,228479,0.01299,0.05577,
+sfp_state,/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/train/mpd/sfp/sfp_state,,,,,,,,,,,,,,,,,,,,,,missing resolved_config.yaml
+mpd_state,/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/train/mpd/mpd/mpd_state,mpd,,mpd-transformer,3000,128,3,12,12,False,cuda,False,agent_pos,agent_vel,True,True,True,True,32886371,353293,0.00142,0.03935,
+motif_state,/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/train/mpd/motif/motif_state,,,,,,,,,,,,,,,,,,,,,,missing resolved_config.yaml

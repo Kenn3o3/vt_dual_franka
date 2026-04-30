@@ -15,7 +15,7 @@ from vt_franka_shared.models import Arrow, TactileSensorMessage
 from vt_franka_shared.timing import precise_sleep
 
 from ...publishers.quest_udp import QuestUdpPublisher
-from ...rollout.live_buffer import LiveSampleBuffer
+from ...runtime.live_buffer import LiveSampleBuffer
 from ...recording.raw_recorder import JsonlStreamRecorder
 from ...settings import GelsightSettings
 from .tracker import GelsightMarkerTracker
@@ -44,7 +44,7 @@ class GelsightPublisher:
         self.frame_buffer = frame_buffer
         self.image_format = image_format
         self.gripper_status_provider = gripper_status_provider
-        self.tracker = GelsightMarkerTracker()
+        self.tracker: GelsightMarkerTracker | None = None
         self._base_marker_motion: np.ndarray | None = None
         self._latency_counter = 0
         self._previous_gripper_state = {
@@ -76,9 +76,10 @@ class GelsightPublisher:
                     continue
 
                 resized = cv2.resize(frame, (self.settings.width, self.settings.height))
-                initial_markers, marker_offsets = self.tracker.process_frame(resized)
+                tracker = self._get_tracker()
+                initial_markers, marker_offsets = tracker.process_frame(resized)
                 marker_offsets = self._apply_marker_safety_mask(marker_offsets)
-                initial_markers_norm, marker_offsets_norm = self.tracker.normalize_markers(
+                initial_markers_norm, marker_offsets_norm = tracker.normalize_markers(
                     initial_markers.copy(),
                     marker_offsets.copy(),
                     width=self.settings.width,
@@ -162,6 +163,11 @@ class GelsightPublisher:
             cap.set(cv2.CAP_PROP_EXPOSURE, self.settings.exposure)
         if self.settings.contrast is not None:
             cap.set(cv2.CAP_PROP_CONTRAST, self.settings.contrast)
+
+    def _get_tracker(self) -> GelsightMarkerTracker:
+        if self.tracker is None:
+            self.tracker = GelsightMarkerTracker()
+        return self.tracker
 
     def _fetch_gripper_state(self) -> dict[str, bool]:
         if self.gripper_status_provider is not None:

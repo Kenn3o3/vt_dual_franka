@@ -1,0 +1,6 @@
+type: replay
+checkpoint_path: null
+config:
+  episode_dir: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/collect/put_cup_on_plate/episodes/episode_0000
+  chunk_size: 8
+  skip_gripper: false

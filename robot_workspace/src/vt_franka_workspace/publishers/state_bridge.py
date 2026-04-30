@@ -10,7 +10,6 @@ from vt_franka_shared.models import ControllerState
 
 from ..controller.client import ControllerClient
 from ..recording.raw_recorder import JsonlStreamRecorder
-from ..ros.state_publisher import Ros2StatePublisher
 from ..settings import QuestFeedbackSettings
 from .quest_udp import QuestUdpPublisher
 
@@ -24,14 +23,12 @@ class StateBridge:
         quest_publisher: QuestUdpPublisher,
         settings: QuestFeedbackSettings,
         recorder: JsonlStreamRecorder | None = None,
-        ros_publisher: Ros2StatePublisher | None = None,
         state_provider: Callable[[], ControllerState] | None = None,
     ) -> None:
         self.controller = controller
         self.quest_publisher = quest_publisher
         self.settings = settings
         self.recorder = recorder
-        self.ros_publisher = ros_publisher
         self.state_provider = state_provider
         self._running = Event()
         self._thread: Thread | None = None
@@ -47,8 +44,6 @@ class StateBridge:
         self._running.clear()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
-        if self.ros_publisher is not None:
-            self.ros_publisher.shutdown()
 
     def _loop(self) -> None:
         period = 1.0 / self.settings.state_publish_hz
@@ -56,8 +51,6 @@ class StateBridge:
             try:
                 state = self._get_state()
                 self.quest_publisher.publish_robot_state(state)
-                if self.ros_publisher is not None:
-                    self.ros_publisher.publish_controller_state(state)
                 if self.recorder is not None:
                     self.recorder.record_event(
                         {
