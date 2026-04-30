@@ -18,7 +18,27 @@ In the Quest app, set the workstation IP to:
 
 ## Run Collection
 
-Run on the workspace machine:
+### Run on the robot controller machine:
+
+#### Terminal C1: Polymetis robot server
+
+```bash
+launch_robot.py robot_client=franka_hardware robot_client.executable_cfg.robot_ip=172.16.0.2
+```
+
+#### Terminal C2: Polymetis gripper server
+
+```bash
+launch_gripper.py gripper=franka_hand gripper.executable_cfg.robot_ip=172.16.0.2
+```
+
+#### Terminal C3: Controller API
+
+```bash
+vt-franka-controller run --config /home/zhenya/kenny/visuotact/vt_franka/robot_controller/config/controller.yaml
+```
+
+### Run on the workspace machine:
 
 ```bash
 conda activate vt-franka-workspace
