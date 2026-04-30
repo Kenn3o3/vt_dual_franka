@@ -53,9 +53,38 @@ DP:
 python -m vt_franka_workspace.policies.mpd.train \
   --workspace-config robot_workspace/config/workspace.yaml \
   --task-name put_cup_on_plate \
+  --algorithm dp \
+  --device cuda \
+  --epochs 500
+
+python -m vt_franka_workspace.policies.mpd.train \
+  --workspace-config robot_workspace/config/workspace.yaml \
+  --task-name put_cup_on_plate \
+  --algorithm fm \
+  --device cuda \
+  --epochs 500
+
+python -m vt_franka_workspace.policies.mpd.train \
+  --workspace-config robot_workspace/config/workspace.yaml \
+  --task-name put_cup_on_plate \
+  --algorithm sfp \
+  --device cuda \
+  --epochs 500
+
+python -m vt_franka_workspace.policies.mpd.train \
+  --workspace-config robot_workspace/config/workspace.yaml \
+  --task-name put_cup_on_plate \
+  --algorithm mpd \
+  --device cuda \
+  --epochs 500
+
+python -m vt_franka_workspace.policies.mpd.train \
+  --workspace-config robot_workspace/config/workspace.yaml \
+  --task-name put_cup_on_plate \
   --algorithm motif \
   --device cuda \
   --epochs 500
+
 ```
 
 Other algorithms use the same command with `--algorithm dp`, `--algorithm fm`, `--algorithm sfp`, `--algorithm mpd`, or `--algorithm motif`.

@@ -125,6 +125,7 @@ class PolicyRunner:
                 "controller_host": self.workspace.controller.host,
                 "mode": "run_policy",
                 "policy_spec": f"{self.policy.__class__.__module__}.{self.policy.__class__.__name__}",
+                "policy": self._policy_metadata(),
                 "inference": self.inference.model_dump(mode="json"),
             },
             resume=self.resume_run,
@@ -327,6 +328,7 @@ class PolicyRunner:
             metadata={
                 "inference": self.inference.model_dump(mode="json"),
                 "policy_spec": f"{self.policy.__class__.__module__}.{self.policy.__class__.__name__}",
+                "policy": self._policy_metadata(),
             },
         )
         self._current_episode_dir = episode_dir
@@ -516,6 +518,21 @@ class PolicyRunner:
         state = self.state_monitor.get_state(max_age_sec=max_age_sec)
         self.gripper_status.update(state)
         return state
+
+    def _policy_metadata(self) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "policy_spec": f"{self.policy.__class__.__module__}.{self.policy.__class__.__name__}",
+        }
+        settings = getattr(self.policy, "settings", None)
+        for key in ("algorithm", "policy_name", "task_name"):
+            if settings is not None and hasattr(settings, key):
+                value = getattr(settings, key)
+                if value is not None:
+                    metadata[key] = value
+        checkpoint_path = getattr(self.policy, "checkpoint_path", None)
+        if checkpoint_path is not None:
+            metadata["checkpoint_path"] = str(checkpoint_path)
+        return metadata
 
     def _build_status_locked(self) -> dict:
         ready, reasons = self._is_ready_for_episode_locked()

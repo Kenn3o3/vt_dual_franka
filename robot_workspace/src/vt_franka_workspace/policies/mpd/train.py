@@ -150,8 +150,15 @@ def run_training(config: MPDTrainConfig) -> int:
     if config.dry_run:
         return 0
     env = os.environ.copy()
-    upstream_path = str(Path(config.upstream_repo_dir).resolve())
-    env["PYTHONPATH"] = f"{upstream_path}{os.pathsep}{env.get('PYTHONPATH', '')}"
+    upstream_dir = Path(config.upstream_repo_dir).resolve()
+    python_paths = [
+        str(upstream_dir),
+        str(upstream_dir / "dependencies" / "MP_PyTorch"),
+    ]
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        python_paths.append(existing_pythonpath)
+    env["PYTHONPATH"] = os.pathsep.join(python_paths)
     return subprocess.run(command, cwd=config.upstream_repo_dir, env=env, check=False).returncode
 
 
