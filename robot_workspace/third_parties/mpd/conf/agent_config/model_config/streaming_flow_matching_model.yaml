@@ -1,0 +1,14 @@
+_target_: movement_primitive_diffusion.models.streaming_flow_matching_model.StreamingFlowMatchingModel
+_recursive_: False
+
+defaults:
+  - inner_model_config: ???
+  - _self_
+
+# Streaming Flow Policy parameters
+# sigma_r = sqrt(sigma_1^2 - sigma_0^2 * exp(-2k))
+# Must have sigma_1^2 > sigma_0^2 * exp(-2k) to keep sigma_r > 0 (stochastic coupling).
+# With sigma_0=0.0: sigma_r = sigma_1 = 0.1, so z latent is active.
+sigma_0: 0.0  # Standard deviation of Gaussian tube at t=0
+sigma_1: 0.1  # Standard deviation of Gaussian tube at t=1
+k: 0.0  # Decay rate for a(t) (0.0 means no decay)

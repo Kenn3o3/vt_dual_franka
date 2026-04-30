@@ -1,0 +1,11 @@
+# @package agent_config.model_config.inner_model_config.motif_handler_config
+_target_: movement_primitive_diffusion.utils.motif_utils.MOTIFHandler
+_recursive_: False
+
+num_dof: ${agent_config.model_config.inner_model_config.action_size}
+dt: ${dataset_config.dt}
+traj_steps: ${t_pred}
+num_modes: 8
+chunk_duration: 1.0
+use_dct: True  # M3 ablation: set False to operate on raw velocity frames
+device: ${device}

@@ -1,0 +1,49 @@
+_target_: movement_primitive_diffusion.agents.motif_agent.MOTIFAgent
+_recursive_: False
+
+defaults:
+  - model_config: motif_diffusion_model
+  - sigma_distribution_config: rand_log_logistic
+  - sampler_config: euler
+  - noise_scheduler_config: exponential_scheduler
+
+device: null  # set in python based on main config
+
+t_obs: ${t_obs}
+predict_past: ${predict_past}
+
+diffusion_steps: 3
+sigma_min: 0.05
+sigma_max: 10.0
+
+use_ema: True
+ema_config:
+  decay: 0.999
+  min_decay: 0.0
+  update_after_step: 0
+  use_ema_warmup: True
+  inv_gamma: 1.0
+  power: 0.75
+
+optimizer_config:
+  _target_: torch.optim.AdamW
+  lr: 1.0e-4
+  betas: [0.95, 0.999]
+  eps: 1.0e-8
+  weight_decay: 1.0e-6
+
+lr_scheduler_config:
+  _target_: movement_primitive_diffusion.utils.lr_scheduler.get_scheduler
+  name: cosine
+  num_warmup_steps: 500
+  num_training_steps: null
+  last_epoch: -1
+
+special_optimizer_function: True
+
+special_optimizer_config:
+  model_weight_decay: 1.0e-3
+  encoder_weight_decay: 1.0e-6
+  learning_rate: 1.0e-4
+  betas: [0.95, 0.999]
+  eps: 1.0e-8

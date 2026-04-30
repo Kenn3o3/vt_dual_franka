@@ -1,0 +1,23 @@
+# @package _global_
+defaults:
+  - train_defaults
+  - /agent_config: motif_transformer_agent
+  - process_batch_config: motif
+  - encoder_config: state_passthrough
+  - motif_handler_config: motif_handler
+  - override /agent_config/model_config/inner_model_config: motif_transformer
+  - _self_
+
+# Enable Flow Matching algorithm
+agent_config:
+  model_config:
+    algorithm: flow_matching
+    use_ot_sampler: False
+
+predict_past: False  # MOTIF doesn't support predict_past yet
+method_name: motif_fm
+
+swanlab:
+  entity: motif
+  project: movement-primitive-diffusion
+  group: motif-fm-transformer

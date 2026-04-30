@@ -1,0 +1,3 @@
+# @package workspace_config
+_target_: movement_primitive_diffusion.workspaces.dummy_workspace.DummyWorkspace
+_recursive_: False

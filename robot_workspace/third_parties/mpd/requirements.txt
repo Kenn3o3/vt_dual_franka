@@ -1,0 +1,40 @@
+# Movement Primitive Diffusion - Requirements
+# Compatible versions for PyTorch 2.2.0 + CUDA 12.1
+
+# Core Deep Learning
+torch==2.2.0
+torchvision==0.17.0
+torchaudio==2.2.0
+
+# Diffusion Models (compatible with PyTorch 2.2.0)
+diffusers==0.21.4
+transformers==4.35.2
+huggingface_hub==0.19.4
+tokenizers==0.15.2
+safetensors>=0.4.1
+accelerate>=0.20.0
+
+# Experiment Tracking
+swanlab
+
+# Robotics & Simulation
+robomimic
+gymnasium
+mujoco
+
+# Configuration
+hydra-core
+omegaconf
+
+# Visualization
+matplotlib
+plotly
+imageio
+moviepy
+
+# Utilities
+numpy>=1.17
+scipy
+tqdm
+pyyaml
+regex

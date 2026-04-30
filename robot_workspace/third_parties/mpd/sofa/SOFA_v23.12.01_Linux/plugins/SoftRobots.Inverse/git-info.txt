@@ -1,0 +1,52 @@
+# Git info for SoftRobots.Inverse
+
+## Current commit
+## git rev-parse --abbrev-ref HEAD
+5773e815897d350a738e9f87c65765ccb9f938cc
+
+## Branches containing current commit
+## git branch -a --contains 5773e815897d350a738e9f87c65765ccb9f938cc 
+* (HEAD detached at 5773e81)
+  main
+  remotes/origin/HEAD -> origin/main
+  remotes/origin/main
+  remotes/origin/pr/11/head
+  remotes/origin/pr/12/head
+  remotes/origin/pr/13/head
+  remotes/origin/pr/14/head
+  remotes/origin/pr/15/head
+  remotes/origin/pr/16/head
+  remotes/origin/pr/17/head
+  remotes/origin/pr/18/head
+  remotes/origin/pr/19/head
+  remotes/origin/pr/20/head
+  remotes/origin/pr/21/head
+  remotes/origin/pr/22/head
+  remotes/origin/pr/22/merge
+  remotes/origin/pr/23/head
+  remotes/origin/pr/23/merge
+  remotes/origin/pr/7/head
+  remotes/origin/pr/8/head
+  remotes/origin/pr/9/head
+  remotes/origin/tag/release-EulalieCoevoet-patch-1
+  remotes/origin/tag/release-main
+  remotes/origin/tag/release-pr_followingsofachanges
+  remotes/origin/tag/release-v23.06
+  remotes/origin/v23.06
+  remotes/origin/v23.12
+
+## Remotes
+## git remote -vv 
+origin	https://github.com/SofaDefrost/SoftRobots.Inverse.git (fetch)
+origin	https://github.com/SofaDefrost/SoftRobots.Inverse.git (push)
+
+## More info
+## git log --pretty -n 1
+commit 5773e815897d350a738e9f87c65765ccb9f938cc
+Merge: 046eb16 c9ed6d3
+Author: EulalieCoevoet <eulalie.coevoet@gmail.com>
+Date:   Thu Sep 14 14:39:57 2023 +0200
+
+    Merge pull request #6 from alxbilger/deprecatedData
+    
+    Remove usage of deprecated Data

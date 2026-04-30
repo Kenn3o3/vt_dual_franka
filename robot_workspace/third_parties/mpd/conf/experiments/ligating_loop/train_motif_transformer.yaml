@@ -1,0 +1,15 @@
+# @package _global_
+defaults:
+  - train_defaults
+  - /agent_config: motif_transformer_agent
+  - process_batch_config: motif
+  - encoder_config: state_passthrough
+  - motif_handler_config: motif_handler
+  - override /agent_config/model_config/inner_model_config: motif_transformer
+  - override workspace_config: vector
+  - _self_
+
+method_name: motif-transformer
+
+swanlab:
+  group: motif-transformer

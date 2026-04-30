@@ -1,0 +1,1375 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,amsthm,amsfonts}
+\usepackage{mathtools}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\usepackage{cleveref}
+\usepackage{microtype}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{makecell}
+\usepackage{setspace}
+\onehalfspacing
+
+% --- Theorem environments ---
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+\newtheorem{assumption}[theorem]{Assumption}
+
+% --- tcolorbox styles ---
+\tcolorboxenvironment{theorem}{
+  enhanced,breakable,colback=blue!3!white,colframe=blue!35!black,
+  boxrule=0.5pt,arc=4pt,left=6pt,right=6pt,top=3pt,bottom=3pt}
+\tcolorboxenvironment{proposition}{
+  enhanced,breakable,colback=blue!2!white,colframe=blue!25!black,
+  boxrule=0.4pt,arc=4pt,left=6pt,right=6pt,top=3pt,bottom=3pt}
+\tcolorboxenvironment{definition}{
+  enhanced,colback=gray!5!white,colframe=gray!30!white,
+  boxrule=0.4pt,arc=4pt,left=6pt,right=6pt}
+\tcolorboxenvironment{corollary}{
+  enhanced,colback=teal!3!white,colframe=teal!35!black,
+  boxrule=0.4pt,arc=4pt,left=6pt,right=6pt}
+\newenvironment{insightbox}[1][Insight]{%
+  \begin{tcolorbox}[enhanced,breakable,colback=orange!5!white,
+    colframe=orange!60!black,fonttitle=\bfseries,title=#1,
+    boxrule=0.6pt,arc=5pt,left=8pt,right=8pt]}
+  {\end{tcolorbox}}
+
+% --- Math macros ---
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\cA}{\mathcal{A}}
+\newcommand{\cL}{\mathcal{L}}
+\newcommand{\cN}{\mathcal{N}}
+\newcommand{\cW}{\mathcal{W}}
+\newcommand{\norm}[1]{\left\lVert#1\right\rVert}
+\newcommand{\vnet}{v_\phi}
+\newcommand{\acurr}{a_{\mathrm{curr}}}
+\newcommand{\tdiff}{t}
+\newcommand{\texec}{\tau}
+\newcommand{\bz}{z}
+\newcommand{\chunk}{\mathbf{v}}
+\newcommand{\chunknoisy}{\chunk_\tdiff}
+\newcommand{\chunkclean}{\chunk_0}
+\newcommand{\ccoeff}{\mathbf{c}}
+\newcommand{\cclean}{\ccoeff^*}
+\newcommand{\cnoisy}{\ccoeff_\tdiff}
+\DeclareMathOperator*{\argmin}{arg\,min}
+\DeclareMathOperator{\Law}{Law}
+\hypersetup{colorlinks=true,linkcolor=blue!55!black,
+  citecolor=green!45!black,urlcolor=blue!55!black}
+
+% --- Title ---
+\title{
+  \textbf{MOTIF: Modulated ODE Trajectory with Integrated Flow}\\[6pt]
+  \large From Action Images to Action Videos:\\
+  Physical-Time-Aware Robot Control via Functional Flow Matching\\
+  over Fourier Coefficient Space\\[4pt]
+  \normalsize\textit{Two Orthogonal Time Axes, Structural $C^\infty$ Continuity,
+  Direct Velocity Supervision, and Closed-Loop Execution without Architectural Overhead}
+}
+\author{}
+\date{\today}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+% =============================================================================
+\section{Introduction}
+\label{sec:intro}
+% =============================================================================
+
+\subsection{The Action Image Problem}
+
+Consider how $\pi_0$~\cite{black2024pi0} generates robot actions.
+The action expert receives a noisy tensor
+$\mathbf{a}_\tdiff \in \R^{K \times d}$---a chunk of $K$ joint
+positions---and progressively denoises it via Flow Matching toward a
+clean action sequence.
+The integer $K = 50$ covers one second of motion at 50\,Hz;
+both $K$ and the control frequency are fixed at training time.
+
+This formulation makes a subtle but consequential error:
+\textbf{it treats a sequence of robot motions as if it were a single image.}
+
+A natural image is a function of spatial pixel coordinates $(x, y)$.
+A video is a function of both spatial coordinates \emph{and physical time}
+$\texec \in [0,T]$, where $\texec$ is measured in seconds.
+The distinction is not cosmetic: in a video, the meaning of frame $k$
+depends on \emph{when} it occurs, not merely on its ordinal rank.
+
+In $\pi_0$, the action chunk $\mathbf{a} \in \R^{K \times d}$ is indexed by
+the integer $k \in \{0,\ldots,K-1\}$.
+This index encodes only \emph{order}, not physical time.
+The model has no internal representation of:
+\begin{enumerate}[leftmargin=2em,noitemsep]
+  \item \emph{How fast} the motion unfolds---whether $a_k$ and $a_{k+1}$
+    are separated by 20\,ms or 200\,ms.
+  \item \emph{What velocity} the robot should have at each moment---the
+    direct signal that low-level impedance controllers require.
+  \item \emph{Continuous smoothness}---the discrete output provides no
+    structural guarantee that neighboring actions are physically consistent.
+  \item \emph{The robot's actual state}---the chunk is executed open-loop
+    with no interface through which the true proprioceptive state
+    can re-enter within a chunk.
+\end{enumerate}
+
+\begin{insightbox}[The Core Distinction]
+\centering
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lcc}
+\toprule
+& \textbf{$\pi_0$ (action image)} & \textbf{MOTIF (action video)} \\
+\midrule
+Output object       & position tensor $[K, d]$        & velocity field $v(\texec) \in C^\infty$ \\
+Time axis           & ordinal step $k$ (integer)       & physical time $\texec$ (seconds) \\
+Primary quantity    & position                          & velocity \\
+Continuity          & none (discrete points)            & structural $C^\infty$ (Fourier basis) \\
+State interface     & none (open-loop in chunk)         & $A$ is a direct query at $\tdiff=0$ \\
+Control frequency   & fixed at training                 & free at inference \\
+High-freq.\ data    & downsampled to $K$                & fully utilized \\
+\bottomrule
+\end{tabular}
+\end{insightbox}
+
+\subsection{The Right Object: A Smooth Velocity Field}
+
+We propose that the correct output of a robot action expert is not a
+position sequence but a \emph{continuous velocity field}:
+\begin{equation}
+  \label{eq:vfield}
+  v : [0,T] \to \R^d, \qquad v(\texec \mid \bz,\, A_{\mathrm{curr}})
+  = \text{velocity the robot should have at time } \texec,
+\end{equation}
+conditioned on the visual-linguistic context $\bz = f_{\mathrm{VLM}}(o,\ell)$
+and the robot's current state $A_{\mathrm{curr}}$.
+
+This reframing has four structural consequences:
+
+\paragraph{Velocity as the primary output.}
+$v(\texec)$ is the direct reference signal for impedance controllers.
+No finite-differencing, no post-hoc smoothing.
+
+\paragraph{Physical time as an explicit input.}
+$\texec$ is measured in seconds.
+The model learns that $v(0.1\,\text{s})$ and $v(0.9\,\text{s})$ are
+physically different moments.
+Control frequency is a free inference-time parameter.
+
+\paragraph{Structural $C^\infty$ continuity.}
+By parameterizing $v$ as a finite sum of Fourier (cosine) basis functions,
+continuity is a mathematical property of the representation, not a soft
+constraint imposed by the loss function.
+No regularization hyperparameters are introduced.
+
+\paragraph{State as a runtime query.}
+Because the current state $A$ appears as an input to the velocity
+evaluation, the field can be queried at the robot's true proprioceptive
+state at every control step.
+Closed-loop control is structural, not engineered.
+
+\subsection{MOTIF: Four Changes to $\pi_0$}
+
+We propose \textbf{MOTIF} (\textbf{M}odulated \textbf{O}DE \textbf{T}rajectory
+with \textbf{I}ntegrated \textbf{F}low).
+The action expert in $\pi_0$ already implements Flow Matching---an ODE
+in denoising time $\tdiff$.
+MOTIF does not add a new ODE; it changes \emph{what the FM denoises}:
+from a position sequence (action image) to a Fourier coefficient vector
+(compact representation of a $C^\infty$ velocity field).
+
+The four changes to $\pi_0$'s action expert are:
+\begin{enumerate}[leftmargin=2em,noitemsep]
+  \item Replace step-index positional encoding with
+    \emph{sinusoidal embedding of physical time} $\texec_k$ (in seconds).
+  \item Change the FM generation space from $\R^{K \times d}$ (position
+    sequence) to $\R^{(M+1) \times d}$ (DCT Fourier coefficients),
+    with $M \ll K$.
+  \item Add the \emph{current robot state} $A$ as a runtime query input,
+    active only at execution time ($\tdiff = 0$).
+  \item Supervise with \emph{velocity targets} $\dot{a}_k$ from
+    high-frequency proprioceptive data, via Fourier decoding.
+\end{enumerate}
+
+The VLM backbone, training infrastructure, and data pipeline
+are inherited unchanged from $\pi_0$ / openpi~\cite{openpi2025}.
+
+\paragraph{LEITMOTIF.}
+Named after the musical concept of a recurring theme that continuously
+pulls a composition back to its center, \textbf{LEITMOTIF} is the
+closed-loop execution mode of MOTIF.
+Because the velocity field accepts the current state $A$ as a query
+input, it can be evaluated at the robot's true proprioceptive state
+at every control step---continuously correcting deviations.
+
+\subsection{Contributions}
+
+\begin{enumerate}[leftmargin=2em]
+  \item \textbf{Conceptual:} The \emph{action image vs.\ action video}
+    framing, which precisely identifies four structural deficiencies of
+    current VLA action experts and proposes a smooth velocity field as
+    the minimal correction.
+  \item \textbf{Methodological:} The MOTIF architecture: four minimal
+    changes to the $\pi_0$ action expert that jointly achieve
+    physical time awareness, structural $C^\infty$ continuity,
+    direct velocity output, and closed-loop execution capability.
+  \item \textbf{Theoretical:} Formal results on FM correctness
+    (Theorem~\ref{thm:funcfm}), structural smoothness
+    (Theorem~\ref{thm:smooth}), sample complexity advantage
+    (Theorem~\ref{thm:sample}), and closed-loop robustness
+    (Proposition~\ref{prop:bibs}).
+  \item \textbf{Empirical:} Five targeted experiments including the
+    mid-denoising executability test (E3) and the physical-time
+    perturbation test (E1), both unique to MOTIF.
+\end{enumerate}
+
+% =============================================================================
+\section{The Two-Time-Axis Framework}
+\label{sec:framework}
+% =============================================================================
+
+\subsection{Two Orthogonal Kinds of Time}
+
+Every generative model for robot control operates under two distinct,
+orthogonal notions of time.
+
+\begin{definition}[Two Orthogonal Time Axes]
+\label{def:two_times}
+\begin{itemize}[leftmargin=2em,noitemsep]
+  \item \textbf{FM denoising time} $\tdiff \in [0,1]$: parameterizes
+    the generative process from noise ($\tdiff{=}1$) to a clean
+    motion intention ($\tdiff{=}0$).
+    This axis lives entirely within the model's computational graph
+    and has no physical interpretation.
+  \item \textbf{Physical execution time} $\texec \in [0,T]$: the real
+    elapsed time within one action chunk, measured in seconds.
+    This axis exists independently of the model.
+\end{itemize}
+A framework \emph{orthogonalizes} these axes if, at every denoising
+step $\tdiff$, the current generative state already defines a
+physically interpretable, smooth object over $\texec$.
+\end{definition}
+
+\subsection{Why $\pi_0$ Conflates the Two Axes}
+
+In $\pi_0$, action token $k$ receives the positional encoding
+$\text{sinusoidal}(k)$, implicitly setting its physical time to
+$\texec_k = k / f_{\mathrm{ctrl}}$ where $f_{\mathrm{ctrl}}$ is the
+\emph{training} control frequency.
+This creates a rigid coupling: changing $f_{\mathrm{ctrl}}$ at inference
+changes the physical meaning of every token, requiring full retraining.
+Because $k$ is a dimensionless integer, the model cannot distinguish
+``50 steps at 50\,Hz (1\,s)'' from ``50 steps at 200\,Hz (0.25\,s)'';
+the physical scale of time is absent.
+
+Furthermore, at intermediate denoising steps $\tdiff \in (0,1)$, the
+tensor $\mathbf{a}_\tdiff$ is a convex combination of noise and clean
+positions with no physical interpretation: the two axes are conflated.
+
+\subsection{MOTIF Under This Taxonomy}
+
+In MOTIF, each action token at physical time $\texec_k$ receives the
+embedding $\text{TimeEncode}(\texec_k)$ (in seconds).
+The FM generation space is the space of Fourier coefficient vectors
+$\ccoeff \in \R^{(M+1)\times d}$; at every denoising step $\tdiff$,
+the current $\ccoeff_\tdiff$ can be decoded into a $C^\infty$ velocity
+function over $\texec \in [0,T]$.
+The two axes are fully orthogonalized.
+
+\begin{table}[ht]
+\centering
+\caption{Taxonomy of VLA action generation under the two-axis framework.}
+\label{tab:taxonomy}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lccccccc}
+\toprule
+\textbf{Method} &
+\makecell{Physical\\time $\texec$} &
+\makecell{Velocity\\primary} &
+\makecell{Structural\\continuity} &
+\makecell{State\\query} &
+\makecell{Var.\\freq.} &
+\makecell{Prob.\\model} &
+\makecell{Axes\\orthog.} \\
+\midrule
+ACT / Diffusion Policy  & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\sim$ & $\times$ \\
+$\pi_0$ / GR00T         & $\times$ & $\times$ & $\times$ & $\times$ & $\times$ & $\checkmark$ & $\times$ \\
+ProDMP                  & $\times$ & $\times$ & $\checkmark$ & $\times$ & $\sim$ & $\sim$ & $\times$ \\
+\textbf{MOTIF (ours)}   & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ & $\checkmark$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% =============================================================================
+\section{MOTIF: Method}
+\label{sec:method}
+% =============================================================================
+
+\subsection{Setup and Notation}
+
+Let $o$ denote an RGB observation, $\ell$ a language instruction, and
+$\bz = f_{\mathrm{VLM}}(o,\ell) \in \R^{d_z}$ the VLM context embedding.
+Let $d$ be the robot's degree of freedom and $T$ the chunk duration in seconds.
+At inference with control frequency $f_{\mathrm{ctrl}}$, the chunk is
+evaluated at $K = \lfloor T \cdot f_{\mathrm{ctrl}} \rfloor$ physical
+times $\texec_k = kT/K$, $k = 0,\ldots,K-1$.
+Ground-truth velocity $\dot{a}_k \in \R^d$ at each timestep is obtained
+from high-frequency proprioceptive recordings via direct encoder readout
+or finite difference.
+
+\subsection{Change 1: Physical Time Encoding}
+\label{sec:time_encoding}
+
+The most important structural change is the replacement of the ordinal
+step index $k$ with physical time $\texec_k$ as the positional signal
+for each action token.
+
+\paragraph{$\pi_0$ (step index):}
+\begin{equation}
+  \text{PosEncode}(k) = \text{sinusoidal}(k), \quad k \in \mathbb{Z}_{\geq 0}.
+\end{equation}
+
+\paragraph{MOTIF (physical time):}
+\begin{equation}
+  \label{eq:time_enc}
+  \text{TimeEncode}(\texec_k) = \bigl[
+    \sin(\omega_1 \texec_k),\,\cos(\omega_1 \texec_k),\,\ldots,\,
+    \sin(\omega_m \texec_k),\,\cos(\omega_m \texec_k)
+  \bigr] \in \R^{2m},
+  \quad
+  \omega_i = e^{i \cdot \log(10^4)/m},
+\end{equation}
+where $\texec_k = kT/K$ is in \emph{seconds}.
+The model associates velocities with their physical moment in time,
+independently of how many tokens $K$ span the chunk.
+At inference, $K$ (equivalently $f_{\mathrm{ctrl}}$) is freely varied
+by adjusting $\texec_k = kT/K$ with the desired $K$, requiring no retraining.
+
+\begin{remark}
+Physical time encoding and physical time continuity are distinct properties.
+The former ensures the model knows the physical meaning of each token.
+The latter ensures the generated object is itself a continuous function.
+MOTIF achieves both; Change~1 addresses the former and Change~2 the latter.
+\end{remark}
+
+\subsection{Change 2: Fourier Coefficient Space}
+\label{sec:fourier_space}
+
+\subsubsection{Motivation: Why Continuity Must Be Structural}
+
+Physical robot joints require continuous velocity ($v \in C^0$);
+velocity discontinuities cause instantaneous torque jumps that damage
+hardware.
+In $\pi_0$, continuity is not enforced; the model produces $K$ independent
+real vectors with no mathematical relationship between adjacent entries.
+One could attempt to impose smoothness through a regularization loss
+(e.g., finite-difference penalty), but this introduces extra hyperparameters
+and provides only a soft, training-dependent guarantee.
+
+The correct approach is to parameterize the output as a member of a
+function space that is continuously smooth \emph{by construction}.
+For velocity functions on $[0,T]$, the appropriate space is the Sobolev
+space $H^1([0,T])$, which embeds into $C^0([0,T])$ by the Sobolev
+embedding theorem:
+\begin{equation}
+  H^1([0,T]) \hookrightarrow C^0([0,T]).
+\end{equation}
+The natural orthonormal basis of $H^1([0,T])$ is the cosine (DCT-II) basis,
+whose elements are $\phi_k(\texec) = \cos(k\pi\texec/T)$.
+The $H^1$ inner product is diagonal in this basis, with high-frequency
+coefficients incurring larger norm cost---exactly what the physics demands.
+
+\subsubsection{Fourier Basis Parameterization}
+
+Rather than outputting $K$ velocity vectors, the action expert outputs
+$M+1$ DCT-II coefficient vectors $\hat{\ccoeff} \in \R^{(M+1)\times d}$,
+with $M \ll K$.
+The velocity function is recovered by decoding:
+\begin{equation}
+  \label{eq:decode}
+  \hat{v}(\texec) = \sum_{k=0}^{M} \hat{c}_k\,\phi_k(\texec),
+  \qquad
+  \phi_k(\texec) = \cos\!\left(\frac{k\pi\texec}{T}\right).
+\end{equation}
+
+\begin{theorem}[Structural Smoothness]
+\label{thm:smooth_fourier}
+For any coefficient vector $\hat{\ccoeff} \in \R^{(M+1)\times d}$
+produced by the network, the decoded velocity function
+$\hat{v}(\texec) \in C^\infty([0,T],\R^d)$.
+The integrated position trajectory
+$\hat{a}(\texec) = a_0 + \int_0^\texec \hat{v}(s)\,ds \in C^\infty$,
+and acceleration $\ddot{a}$, jerk $\dddot{a}$, and all higher derivatives
+are analytically available at no additional computational cost.
+\end{theorem}
+
+\begin{proof}
+The result is a finite sum of $C^\infty$ functions (cosines) scaled by
+constant coefficients.
+Finite linear combinations of smooth functions are smooth.
+The integral and all derivatives follow from the fundamental theorem of
+calculus applied to each term.
+\end{proof}
+
+\begin{corollary}[Mid-Denoising Executability]
+\label{cor:middenoise}
+Let $\cnoisy = (1-\tdiff)\cclean + \tdiff\xi$ be the FM interpolation
+at any $\tdiff \in [0,1]$.
+The velocity function decoded from $\cnoisy$ is $C^\infty$ for all $\tdiff$.
+Any intermediate denoising state produces a physically executable trajectory.
+\end{corollary}
+
+This is in sharp contrast to $\pi_0$, where intermediate denoising states
+are convex combinations of noise and clean positions with no physical
+interpretation.
+
+\subsubsection{Selecting $M$: Energy-Based Criterion}
+
+The number of Fourier modes $M$ is determined from the training data
+via an energy threshold:
+\begin{equation}
+  M = \min\!\left\{m : \frac{\sum_{k=0}^{m} \|\cclean_k\|^2}
+    {\sum_{k=0}^{K/2} \|\cclean_k\|^2} \geq \epsilon\right\},
+  \quad \epsilon = 0.95.
+\end{equation}
+For joint velocity trajectories of duration $T=1\,\text{s}$ at 50\,Hz,
+this yields $M \approx 8$--$16$ for smooth reaching motions and
+$M \approx 20$--$32$ for tasks with rapid direction changes.
+Overestimating $M$ has no negative effect beyond a marginal increase in
+output head dimensionality; underestimating introduces approximation error
+in high-frequency components.
+
+\subsubsection{Frequency-Weighted Noise Prior}
+
+Standard Gaussian noise $\xi \sim \cN(0, I_{(M+1)\times d})$ assigns
+equal variance to all Fourier modes.
+This is inconsistent with the physical prior: robot velocity trajectories
+are low-frequency dominated, so the high-frequency modes of the data have
+small magnitude.
+
+The noise prior that is consistent with the $H^1$ structure of the target
+space is the frequency-weighted Gaussian:
+\begin{equation}
+  \label{eq:freq_noise}
+  \xi_k \sim \cN\!\left(0,\, \frac{\sigma^2}{1+\omega_k^2}\,I_d\right),
+  \qquad \omega_k = \frac{k\pi}{T},
+\end{equation}
+which assigns smaller variance to high-frequency modes.
+This is a \emph{prior} modification, not a loss modification.
+The FM interpolation path from this prior to the data is geometrically
+better aligned with the data manifold, providing more uniform learning
+signal across the denoising trajectory.
+
+\subsection{Change 3: State-Conditioned Velocity Query}
+\label{sec:state_query}
+
+\subsubsection{Design Principle: Denoising and Execution Are Separate Regimes}
+
+The key insight is that the FM denoising phase ($\tdiff \in (0,1]$) and
+the execution phase ($\tdiff = 0$) have fundamentally different semantics:
+
+\begin{itemize}[leftmargin=2em,noitemsep]
+  \item \textbf{Denoising phase} ($\tdiff > 0$): The model is learning
+    to recover a clean motion intention from noise.
+    The robot's current state is not available (we are planning before
+    execution), and conditioning on it would conflate two unrelated signals.
+    The state input is masked.
+  \item \textbf{Execution phase} ($\tdiff = 0$): The clean motion intention
+    $\chunkclean$ is fixed. The model is being queried for the velocity
+    at a specific physical time and state.
+    The true proprioceptive state $A_k$ is available and should be used.
+\end{itemize}
+
+\subsubsection{Implementation: $t$-Conditioned State Masking}
+
+The state mask is conditioned on the FM denoising time $\tdiff$, not on
+a training/inference flag:
+\begin{equation}
+  \label{eq:state_mask}
+  s_k = \underbrace{\mathbf{1}[\tdiff = 0]}_{\text{is execution?}}
+    \cdot f_{\mathrm{state}}(A_k)
+  + \underbrace{\mathbf{1}[\tdiff > 0]}_{\text{is denoising?}}
+    \cdot s_{\mathrm{mask}},
+\end{equation}
+where $f_{\mathrm{state}} : \R^d \to \R^{d_h}$ is a learned linear
+projection, $s_{\mathrm{mask}} \in \R^{d_h}$ is a learned mask token,
+and $s_k$ is added to every action token at position $k$.
+
+\begin{remark}[Critical Correctness Condition]
+The masking must depend on $\tdiff$, not on a training/inference flag.
+If the mask is applied during all of training (regardless of $\tdiff$),
+then at $\tdiff = 0$ during the velocity supervision loss $\cL_{\mathrm{vel}}$,
+the state is also masked---meaning the model never trains on the
+(state provided, $t=0$) regime that it is evaluated on at inference.
+This creates a training/inference distribution mismatch that silently
+nullifies the state-conditioned velocity query.
+Equation~\eqref{eq:state_mask} with $\tdiff$-conditioning avoids this.
+\end{remark}
+
+\subsubsection{Closed-Loop Execution: LEITMOTIF}
+
+In open-loop mode, the integrated state $A_k^{\mathrm{ODE}} = A_0 + \int_0^{\texec_k} \hat{v}(s)\,ds$
+is used as the query.
+In LEITMOTIF mode, the true proprioceptive sensor state $A_k^{\mathrm{real}}$ is read at every
+control step and used instead:
+\begin{equation}
+  v_k = \vnet\!\bigl(\chunkclean,\; 0,\; \bz,\; A_k^{\mathrm{real}},\; \texec_k\bigr).
+\end{equation}
+This activates the velocity field's state-correction capability at zero
+additional computational cost: it is simply a different choice of query
+argument at execution time.
+No special training, no additional networks, no architectural modification.
+
+\subsection{Change 4: Velocity Supervision via Fourier Decoding}
+\label{sec:vel_supervision}
+
+\subsubsection{Loss Structure}
+
+The full training objective is:
+\begin{equation}
+  \label{eq:total_loss}
+  \cL = \cL_{\mathrm{FM}} + \alpha\,\cL_{\mathrm{vel}},
+  \qquad \alpha = 1.0.
+\end{equation}
+
+\paragraph{FM loss (system learns the distribution of motions).}
+\begin{equation}
+  \label{eq:fm_loss}
+  \cL_{\mathrm{FM}} = \E_{\tdiff,\,\xi,\,\cclean}
+  \Bigl[\norm{\vnet\!\bigl(\cnoisy,\,\tdiff,\,\bz\bigr)
+    - \bigl(\xi - \cclean\bigr)}^2\Bigr],
+\end{equation}
+where the linear interpolation path is:
+\begin{align}
+  \cnoisy &= (1-\tdiff)\,\cclean + \tdiff\,\xi, \\
+  \xi &\sim \cN\!\left(0,\;\mathrm{diag}\!\left(\frac{\sigma^2}{1+\omega_k^2}\right)
+    \otimes I_d\right) \quad \text{(frequency-weighted, Eq.~\ref{eq:freq_noise})}, \\
+  \tdiff &\sim \mathrm{Beta}(1.5, 1) \cdot 0.999 + 0.001
+    \quad \text{(biased toward $t=1$, following $\pi_0$ practice)}.
+\end{align}
+The FM target is the vector field $u^* = \xi - \cclean$ (constant conditional flow).
+This is structurally identical to $\pi_0$'s FM loss; the only change is
+that the clean target $\cclean$ is now the DCT coefficient vector of
+the velocity sequence rather than a position sequence.
+
+\paragraph{Velocity supervision loss (system learns physical time and state).}
+\begin{equation}
+  \label{eq:vel_loss}
+  \cL_{\mathrm{vel}} = \E_{i}\!\left[
+    \frac{1}{K}\sum_{j=0}^{K-1}
+    \norm{\texttt{decode}\!\bigl(\hat{\ccoeff}_0^{(i)},\,\texec_j\bigr)
+      - \dot{a}_j^{(i)}}^2
+  \right],
+\end{equation}
+where:
+\begin{itemize}[leftmargin=2em,noitemsep]
+  \item $\hat{\ccoeff}_0^{(i)}$ is the action expert's output at $\tdiff=0$,
+    queried with the clean target $\ccoeff^{*(i)}$ as input, the true
+    demonstration state $A_j^{(i)}$ via Eq.~\eqref{eq:state_mask},
+    and physical times $\texec_j$,
+  \item $\texttt{decode}(\hat{\ccoeff}_0, \texec_j) = \sum_{k=0}^{M} (\hat{\ccoeff}_0)_k\,\phi_k(\texec_j)$
+    is the Fourier decoder (Eq.~\ref{eq:decode}),
+  \item $\dot{a}_j^{(i)}$ is the ground-truth joint velocity from
+    high-frequency proprioception.
+\end{itemize}
+
+This formulation is clean in three ways.
+First, it avoids any state integration: there is no circular dependency
+between the predicted velocity and the query state.
+Second, it uses demonstration states $A_j^{(i)}$ directly from the
+dataset as the state query, so the training distribution for the state
+input matches its inference distribution (true proprioception).
+Third, the comparison is in velocity space, not coefficient space,
+so the loss is interpretable in physical units (rad/s)$^2$.
+
+\subsubsection{High-Frequency Data Utilization}
+
+Proprioceptive data is typically recorded at 200--500\,Hz while cameras
+run at 10--30\,Hz.
+$\pi_0$ must downsample actions to match the fixed horizon $K$,
+discarding high-frequency kinematic information.
+MOTIF directly benefits: $\cL_{\mathrm{vel}}$ is evaluated at any subset
+of available timesteps; denser subsets provide richer supervision without
+changing the model's output dimensionality.
+
+\subsubsection{Data Preprocessing: DCT Coefficient Extraction}
+
+The clean coefficient target $\cclean \in \R^{(M+1)\times d}$ is
+extracted offline from demonstration velocity sequences:
+\begin{equation}
+  c^*_k = \frac{2}{K}\sum_{j=0}^{K-1} \dot{a}_j
+  \cos\!\left(\frac{k\pi(j+0.5)}{K}\right),
+  \quad k = 0,\ldots,M,
+\end{equation}
+using \texttt{scipy.fft.dct} with \texttt{norm='ortho'}.
+The result is cached as a dataset field \texttt{gt\_coeffs} and loaded
+directly during training, adding zero per-step computation.
+
+\subsection{Network Modification Summary}
+
+The action expert's network body---all Transformer layers, VLM cross-attention,
+and denoising-time embedding---is unchanged.
+The only code modification is:
+\begin{equation}
+  \text{Output head: } \texttt{Linear}(d_{\mathrm{model}},\;K \cdot d)
+  \;\to\;
+  \texttt{Linear}(d_{\mathrm{model}},\;(M{+}1) \cdot d).
+\end{equation}
+Because $M \ll K$ (typically $M=16$, $K=50$), the output head is
+\emph{smaller} than in $\pi_0$.
+
+\subsection{Inference Algorithm}
+
+\begin{algorithm}[H]
+\caption{MOTIF Inference}
+\label{alg:infer}
+\begin{algorithmic}[1]
+\Require Observation $o$, language $\ell$, current state $\acurr$,
+  control frequency $f_{\mathrm{ctrl}}$, FM steps $S$, chunk duration $T$,
+  Fourier modes $M$,
+  \texttt{mode} $\in \{\texttt{open\_loop},\;\texttt{leitmotif}\}$
+\State $\bz \leftarrow f_{\mathrm{VLM}}(o, \ell)$
+  \Comment{VLM forward pass; KV-cache reusable}
+\State $K \leftarrow \lfloor T \cdot f_{\mathrm{ctrl}} \rfloor$
+  \Comment{Number of control steps at target frequency}
+\State $\ccoeff_1 \sim \cN\!\left(0,\;\mathrm{diag}(\sigma^2/(1{+}\omega_k^2)) \otimes I_d\right)$
+  \Comment{Frequency-weighted noise in coefficient space}
+\For{$s = S, S-1, \ldots, 1$}
+  \Comment{FM denoising in coefficient space}
+  \State $\tdiff \leftarrow s/S$
+  \State $\ccoeff_{\tdiff - 1/S} \leftarrow \ccoeff_\tdiff
+    - \tfrac{1}{S}\,\vnet(\ccoeff_\tdiff,\,\tdiff,\,\bz)$
+\EndFor
+\State $\cclean \leftarrow \ccoeff_0$
+  \Comment{Clean coefficient vector (motion intention)}
+\State $A \leftarrow \acurr$
+\For{$k = 0, \ldots, K-1$}
+  \State $\texec_k \leftarrow k \cdot T / K$
+    \Comment{Physical time in seconds}
+  \If{\texttt{mode = open\_loop}}
+    \State $A_{\mathrm{query}} \leftarrow A$
+  \ElsIf{\texttt{mode = leitmotif}}
+    \State $A_{\mathrm{query}} \leftarrow \mathrm{proprioception}()$
+      \Comment{True sensor state; LEITMOTIF closed-loop}
+  \EndIf
+  \State $v_k \leftarrow \vnet(\cclean,\;0,\;\bz,\;A_{\mathrm{query}},\;\texec_k)$
+    \Comment{State-conditioned velocity query}
+  \State \textbf{send} $v_k$ to impedance controller
+  \State $A \leftarrow A + v_k / f_{\mathrm{ctrl}}$
+    \Comment{ODE integration (open-loop only)}
+\EndFor
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{Key inference properties.}
+\begin{itemize}[leftmargin=2em,noitemsep]
+  \item \textbf{Variable frequency.} $f_{\mathrm{ctrl}}$ is set freely at
+    inference by adjusting $K$. No retraining.
+  \item \textbf{LEITMOTIF.} Closed-loop execution is a one-line mode switch.
+  \item \textbf{Chunk boundary consistency.} Initial condition $A = \acurr$
+    is the true sensor state; $C^0$ continuity at boundaries is guaranteed
+    by construction.
+  \item \textbf{Mid-denoising executability.} At any $\tdiff$, $\ccoeff_\tdiff$
+    decodes to a $C^\infty$ velocity function.
+    The FM denoising can be interrupted and the partial result executed
+    on the robot.
+\end{itemize}
+
+% =============================================================================
+\section{Theoretical Analysis}
+\label{sec:theory}
+% =============================================================================
+
+\subsection{Assumptions}
+
+\begin{assumption}[Smooth Action Expert]
+\label{asm:smooth}
+$\vnet(\cclean, 0, \bz, \cdot, \cdot)$ is $C^\infty$ in $(A, \texec)$
+for any fixed $(\cclean, \bz)$, and $L$-Lipschitz in $A$ uniformly
+over $\texec \in [0,T]$.
+This holds for smooth activations (SiLU, GELU) on bounded inputs.
+\end{assumption}
+
+\begin{assumption}[Comparable Hypothesis Classes]
+\label{asm:hypothesis}
+The $\pi_0$ discrete position class $\mathcal{F}_K$ and MOTIF velocity
+field class $\mathcal{F}_s$ share the same VLM backbone and are both
+$\Lambda$-Lipschitz in the VLM embedding $\bz$.
+The Sobolev index $s$ of $\mathcal{F}_s$ satisfies $s \geq 2$
+(guaranteed for smooth activations; for ReLU, $s=1$).
+\end{assumption}
+
+\subsection{Theorem 1: FM Correctness over Coefficient Space}
+
+Standard FM~\cite{lipman2022flow} learns a distribution over vectors in $\R^n$.
+MOTIF's FM operates over coefficient vectors $\ccoeff \in \R^{(M+1)\times d}$,
+which represent velocity fields via the Fourier decoder.
+
+\begin{definition}[Functional Flow Matching]
+\label{def:funcfm}
+Let $p_{\mathrm{demo}}$ be the distribution over demonstration velocity
+fields.
+MOTIF's FM approximates the pushforward of $p_{\mathrm{demo}}$ via:
+\begin{equation}
+  \frac{d\ccoeff_\tdiff}{d\tdiff} = \vnet(\ccoeff_\tdiff, \tdiff, \bz),
+  \quad
+  \ccoeff_1 \sim \cN(0, \Sigma_\omega),
+  \quad
+  \texttt{decode}(\ccoeff_0,\,\cdot) \xrightarrow{M \to \infty} v^*(\cdot),
+\end{equation}
+where $\Sigma_\omega = \mathrm{diag}(\sigma^2/(1+\omega_k^2)) \otimes I_d$.
+\end{definition}
+
+\begin{theorem}[Functional FM Correctness]
+\label{thm:funcfm}
+Under standard regularity conditions, if $\cL_{\mathrm{FM}} \to 0$ and
+$M$ is sufficiently large, then:
+\begin{equation}
+  \mathcal{W}_2\!\bigl(\Law(\texttt{decode}(\ccoeff_0)),\;p_{\mathrm{demo}}\bigr)
+  \leq \varepsilon_{\mathrm{FM}} + \varepsilon_{\mathrm{approx}},
+\end{equation}
+where $\varepsilon_{\mathrm{FM}}$ is the FM approximation error and
+$\varepsilon_{\mathrm{approx}} = O(M^{-s})$ is the Fourier truncation
+error for velocity fields in $W^{s,\infty}$.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+$\varepsilon_{\mathrm{FM}}$ follows from standard FM convergence
+results~\cite{lipman2022flow}.
+$\varepsilon_{\mathrm{approx}}$ follows from the rate of convergence of
+finite Fourier series for $W^{s,\infty}$ functions: the approximation
+error of the $M$-term truncation in $L^\infty$ is $O(M^{-s})$.
+The triangle inequality in $\mathcal{W}_2$ yields the stated bound.
+\end{proof}
+
+\subsection{Theorem 2: Smoothness Along the Denoising Path}
+
+\begin{theorem}[Denoising Path Smoothness]
+\label{thm:smooth}
+Under Assumption~\ref{asm:smooth}, for any $\tdiff \in [0,1]$:
+\begin{enumerate}[leftmargin=2em,noitemsep]
+  \item The velocity function
+    $\hat{v}_\tdiff(\texec) = \texttt{decode}(\cnoisy, \texec) \in C^\infty([0,T])$.
+  \item The trajectory from $\acurr$ under $\hat{v}_\tdiff$ is bounded:
+    $\norm{\hat{a}_\tdiff(\texec)}_\infty \leq (\norm{\acurr} + C_v T)e^{LT}$.
+  \item $\hat{v}_\tdiff$ is continuous in $\tdiff$ (the path
+    $t \mapsto \cnoisy$ is linear by construction).
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+For (1): $\cnoisy = (1-\tdiff)\cclean + \tdiff\xi \in \R^{(M+1)\times d}$
+is a fixed coefficient vector; its Fourier decoding is a finite sum of
+$C^\infty$ basis functions.
+For (2): Gr\"{o}nwall applied to the ODE $\dot{\hat{a}} = \hat{v}_\tdiff(\hat{a}, \texec)$
+with $L$-Lipschitz dynamics.
+For (3): linearity in $\tdiff$ of $\cnoisy$ implies pointwise continuity of
+the decoded velocity function.
+\end{proof}
+
+\begin{remark}[Mid-Denoising Executability as a Testable Prediction]
+Theorem~\ref{thm:smooth} implies that at $\tdiff = 0.5$ (halfway through
+denoising), the robot should exhibit coherent task-relevant motion, not
+random noise.
+This is a testable, quantitative prediction unique to MOTIF:
+Experiment~E3 evaluates it directly.
+\end{remark}
+
+\subsection{Theorem 3: Sample Complexity Advantage}
+
+\begin{theorem}[Sample Complexity Gap]
+\label{thm:sample}
+Under Assumptions~\ref{asm:smooth} and~\ref{asm:hypothesis}, let
+$\hat{\pi}_N^{K}$ and $\hat{\pi}_N^{\mathrm{MOTIF}}$ be empirical risk
+minimizers over the discrete position class $\mathcal{F}_K$ and the MOTIF
+velocity field class $\mathcal{F}_s$:
+\begin{align}
+  \E[\mathcal{L}(\hat{\pi}_N^K)] - \mathcal{L}(\pi^*_K)
+    &\leq O\!\left(N^{-\frac{2}{2+Kd}}\right), \label{eq:pi0_rate}\\
+  \E[\mathcal{L}(\hat{\pi}_N^{\mathrm{MOTIF}})] - \mathcal{L}(\pi^*_{\mathrm{MOTIF}})
+    &\leq O\!\left(N^{-\frac{2s}{2s+d}}\right). \label{eq:motif_rate}
+\end{align}
+For $K \geq 2$, $s \geq 2$, Eq.~\eqref{eq:motif_rate} is strictly tighter,
+and the advantage grows monotonically with $K$.
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Covering numbers: $\log \mathcal{N}(\mathcal{F}_K, \varepsilon) = O(Kd \log(1/\varepsilon))$
+from standard uniform convergence;
+$\log \mathcal{N}(\mathcal{F}_s, \varepsilon) = O((d/s)\log(1/\varepsilon))$
+by Kolmogorov entropy of $W^{s,\infty}([0,T]\times\R^d)$.
+Since $Kd > d/s$ for $Ks > 1$, the MOTIF bound is tighter.
+For smooth activations, $s = \infty$ and MOTIF approaches the parametric
+rate $O(N^{-1})$.
+\end{proof}
+
+The intuition: $\pi_0$ must learn an independent real vector at each of
+the $K$ timesteps; MOTIF needs only to learn the $M+1 \ll K$ Fourier
+modes of a smooth function.
+The effective dimension of what must be learned is smaller.
+
+\subsection{Proposition 4: Closed-Loop Robustness (LEITMOTIF)}
+
+\begin{proposition}[Bounded Input, Bounded State Robustness]
+\label{prop:bibs}
+Suppose the learned velocity field is contracting in state:
+\begin{equation}
+  \tfrac{1}{2}\bigl(\nabla_A \vnet + (\nabla_A \vnet)^\top\bigr)
+  \preceq -\lambda I \quad \forall\,A, \texec.
+\end{equation}
+Under LEITMOTIF execution with bounded state perturbation
+$\norm{A_{\mathrm{real},k} - \hat{a}(\texec_k)} \leq \bar{d}$:
+\begin{equation}
+  \limsup_{k \to \infty}\norm{A_{\mathrm{real},k} - \hat{a}(\texec_k)}
+  \leq \frac{\bar{d}}{\lambda}.
+\end{equation}
+\end{proposition}
+
+Contraction rate $\lambda$ can be encouraged via a regularization term
+$\gamma \cdot \E[\lambda_{\max}(\nabla_A \vnet + (\nabla_A \vnet)^\top)]$
+added to the training loss (disabled by default; $\gamma = 0.01$ for
+robustness-critical deployments).
+Even without this term, LEITMOTIF introduces no training/inference
+distribution shift at the state interface: demonstrations provide real
+proprioceptive states as training examples, and LEITMOTIF queries real
+states at inference.
+
+% =============================================================================
+\section{Related Work}
+\label{sec:related}
+% =============================================================================
+
+\paragraph{Flow Matching for VLA.}
+$\pi_0$~\cite{black2024pi0} applies conditional FM to robot action generation,
+treating the action chunk as a continuous sample in $\R^{K \times d}$.
+MOTIF replaces this with FM over Fourier coefficient vectors, changing the
+target from ordinal-indexed positions to physically-timed velocities with
+structural $C^\infty$ continuity.
+The VLM backbone and FM infrastructure are unchanged; MOTIF is a drop-in
+replacement for the action expert head.
+
+\paragraph{FM-based video generation.}
+FLOAT~\cite{ki2025float} uses FM in motion latent space with per-frame
+temporal conditioning, demonstrating that separating frame-level
+conditioning from the FM denoising axis improves temporal consistency.
+MOTIF's per-token physical time encoding is a direct import of this
+insight: each action token receives its own physical-time embedding,
+independent of the FM denoising step.
+
+\paragraph{Movement primitives.}
+ProDMP~\cite{li2023prodmp} learns distributions over Dynamic Movement
+Primitives, using fixed radial basis functions to represent position
+trajectories.
+MOTIF shares the use of a compact basis representation but operates in
+velocity space, uses Fourier (cosine) rather than radial basis functions,
+and learns the full distribution via Flow Matching rather than fitting
+parametric distributions.
+ProDMP does not encode physical time explicitly and generates positions
+rather than velocities.
+
+\paragraph{Continuous-time robot control.}
+Neural ODEs~\cite{chen2018neural} parameterize dynamics as ODEs in physical
+time but do not model distributions over dynamical laws.
+MOTIF models a distribution over velocity fields via FM while also
+organizing the learned field along physical time---achieving both
+probabilistic modeling and continuous-time representation.
+
+\paragraph{Action coherence in flow-based policies.}
+ACG~\cite{acg2025} addresses temporal incoherence in FM-based VLAs via
+inference-time guidance, targeting the symptom rather than the structural
+cause.
+MOTIF addresses the cause: ordinal-indexed positions have no physical
+time structure, so incoherence is unavoidable under that parameterization.
+
+% =============================================================================
+\section{Experimental Design}
+\label{sec:exp}
+% =============================================================================
+
+\subsection{Baselines}
+
+\begin{enumerate}[leftmargin=2em,label=(\roman*)]
+  \item $\pi_0$~\cite{black2024pi0} at fixed 50\,Hz (same VLM backbone).
+  \item $\pi_0$ with temporal ensembling (inference-time smoothing).
+  \item ProDMP~\cite{li2023prodmp} with flow matching over DMP parameters.
+  \item \textbf{MOTIF (open-loop)}: all four changes; LEITMOTIF disabled.
+  \item \textbf{MOTIF (LEITMOTIF)}: full closed-loop mode.
+\end{enumerate}
+
+\subsection{Benchmarks}
+
+\begin{itemize}[leftmargin=2em,noitemsep]
+  \item \textbf{LIBERO}~\cite{liu2023libero}: 10-task manipulation suite;
+    data efficiency and within-distribution generalization.
+  \item \textbf{FurnitureBench}~\cite{heo2023furniturebench}: long-horizon
+    assembly; temporal coherence over multi-minute trajectories.
+  \item \textbf{Real robot} (UR5e / Franka): peg insertion and cable routing;
+    contact compliance and high-frequency velocity control.
+\end{itemize}
+
+\subsection{Targeted Experiments}
+
+\paragraph{E1: Physical time robustness.}
+Train MOTIF and $\pi_0$ at 50\,Hz.
+At inference, evaluate at $\{10, 50, 200\}$\,Hz without retraining.
+\textit{Hypothesis}: MOTIF maintains performance across frequencies
+(physical time is in seconds, invariant to $K$);
+$\pi_0$ degrades outside its training frequency.
+
+\paragraph{E2: High-frequency data benefit.}
+Train with proprioceptive data at $\{10, 50, 200, 500\}$\,Hz.
+$\pi_0$ downsamples all to 50\,Hz; MOTIF uses all frequencies directly.
+\textit{Hypothesis}: MOTIF improves monotonically with data frequency;
+$\pi_0$ is insensitive beyond 50\,Hz.
+
+\paragraph{E3: Mid-denoising executability.}
+Stop FM denoising at $\tdiff \in \{0.5, 0.25, 0.1, 0.0\}$.
+Execute the partial result directly.
+\textit{Hypothesis}: MOTIF achieves $> 50\%$ task success at $\tdiff = 0.5$
+(Corollary~\ref{cor:middenoise});
+$\pi_0$ achieves $\approx 0\%$ (intermediate state is a noise-position mixture).
+
+\paragraph{E4: LEITMOTIF closed-loop robustness.}
+Apply controlled mid-chunk disturbances (joint torque impulses).
+Compare MOTIF (LEITMOTIF) vs.\ MOTIF (open-loop) vs.\ $\pi_0$.
+\textit{Hypothesis}: LEITMOTIF recovers within $\lambda^{-1}$ seconds;
+$\pi_0$ does not recover within a chunk.
+
+\paragraph{E5: Trajectory smoothness.}
+Measure jerk $\norm{\dddot{a}}_2$ along executed trajectories.
+\textit{Hypothesis}: MOTIF achieves significantly lower jerk than $\pi_0$
+(structural $C^\infty$ vs.\ no continuity guarantee);
+the gap grows with $K$.
+
+\subsection{Ablations}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+ID & Variable & Values & Tests \\
+\midrule
+A1 & Time encoding & Step index $k$ vs.\ $\texec_k$ (s) & Change~1 value \\
+A2 & FM space & Position $\R^{K\times d}$ vs.\ coefficients $\R^{(M+1)\times d}$ & Change~2 value \\
+A3 & Noise prior & Standard Gaussian vs.\ frequency-weighted & Prior alignment \\
+A4 & State query & With / without at $\tdiff=0$ & Change~3 value \\
+A5 & Supervision & Position MSE vs.\ velocity via decode & Change~4 value \\
+A6 & $M$ (modes) & $\{4, 8, 16, 32\}$ & Mode count sensitivity \\
+A7 & FM steps $S$ & $\{1, 2, 4, 10\}$ & Few-step sufficiency \\
+A8 & Contraction $\gamma$ & $\{0, 0.01, 0.1\}$ & LEITMOTIF robustness tradeoff \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% =============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+% =============================================================================
+
+We have presented MOTIF (Modulated ODE Trajectory with Integrated Flow),
+which addresses a fundamental representational limitation of current VLA
+action experts: they generate action images (position tensors indexed by
+ordinal step) rather than action videos (smooth velocity fields indexed
+by physical time).
+
+Four minimal changes to the $\pi_0$ action expert---physical time
+encoding, Fourier coefficient parameterization, state-conditioned
+velocity query, and velocity supervision via Fourier decoding---jointly
+achieve: physical time awareness independent of control frequency,
+structural $C^\infty$ continuity guaranteed by the Fourier basis (not
+by regularization), direct velocity output for impedance controllers,
+and closed-loop execution (LEITMOTIF) as a structural property.
+
+These capabilities emerge not from new architectures or training stages,
+but from a change in what the model is asked to represent: not
+``the $k$-th position in a sequence,'' but ``the velocity at physical
+time $\texec$.''
+The network body is unchanged; only the output head dimension changes.
+
+\paragraph{Future directions.}
+The Fourier parameterization enables a natural extension to adaptive
+query density: generate a sparse coefficient vector, then decode at
+higher density in physically critical intervals (e.g., contact transitions)
+and lower density in smooth approach phases.
+This would make the effective control frequency task-adaptive, concentrating
+computation where it matters most.
+
+% --- References ---
+\begin{thebibliography}{99}
+
+\bibitem{black2024pi0}
+Black, K.\ et al.\ (2024).
+$\pi_0$: A Vision-Language-Action Flow Model for General Robot Control.
+\textit{arXiv:2410.24164}.
+
+\bibitem{openpi2025}
+Physical Intelligence.\ (2025).
+openpi: Open-source models and packages for robotics.
+\texttt{github.com/Physical-Intelligence/openpi}.
+
+\bibitem{chen2018neural}
+Chen, R.T.Q., Rubanova, Y., Bettencourt, J., \& Duvenaud, D.\ (2018).
+Neural Ordinary Differential Equations.
+\textit{NeurIPS} 31.
+
+\bibitem{acg2025}
+ACG Authors.\ (2025).
+ACG: Action Coherence Guidance for Flow-based VLA Models.
+\textit{arXiv:2510.22201}.
+
+\bibitem{heo2023furniturebench}
+Heo, M.\ et al.\ (2023).
+FurnitureBench: Reproducible Real-World Benchmark for Long-Horizon Complex Manipulation.
+\textit{RSS 2023}.
+
+\bibitem{ki2025float}
+Ki, T., Min, D., \& Chae, G.\ (2025).
+FLOAT: Generative Motion Latent Flow Matching for Audio-driven Talking Portrait.
+\textit{ICCV 2025}.
+
+\bibitem{li2023prodmp}
+Li, G.\ et al.\ (2023).
+ProDMP: A Unified Perspective on Dynamic and Probabilistic Movement Primitives.
+\textit{RA-L} 8(2).
+
+\bibitem{lipman2022flow}
+Lipman, Y., Chen, R.T.Q., Ben-Hamu, H., Nickel, M., \& Le, M.\ (2022).
+Flow Matching for Generative Modeling.
+\textit{ICLR 2023}.
+
+\bibitem{liu2023libero}
+Liu, B.\ et al.\ (2023).
+LIBERO: Benchmarking Knowledge Transfer in Lifelong Robot Learning.
+\textit{NeurIPS 2023}.
+
+\bibitem{wainwright2019high}
+Wainwright, M.J.\ (2019).
+\textit{High-Dimensional Statistics}. Cambridge University Press.
+
+\end{thebibliography}
+
+% =============================================================================
+\appendix
+\renewcommand{\thesection}{\Alph{section}}
+\setcounter{section}{0}
+% =============================================================================
+
+\section{Hyperparameter Reference}
+\label{app:hyperparams}
+
+\begin{center}
+\begin{tabular}{llll}
+\toprule
+Parameter & Default & Determined by & Notes \\
+\midrule
+$M$ (Fourier modes) & 16 & Energy threshold on training set & Most important new parameter \\
+$\alpha$ ($\cL_{\mathrm{vel}}$ weight) & 1.0 & Ablation A5 & \\
+$T$ (chunk duration) & 1.0\,s & Task & In seconds \\
+$S$ (FM steps) & 4 (fast) / 10 (quality) & Ablation A7 & \\
+$\sigma$ (noise scale) & 1.0 & Rarely needs tuning & \\
+$f_{\mathrm{ctrl}}$ (control freq.) & 50\,Hz & Inference-time choice & No retraining needed \\
+$\gamma$ (contraction) & 0.0 & 0.01 for LEITMOTIF robustness & \\
+Time embed dim $m$ & 64 & Architecture & Sinusoidal, physical seconds \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\section{Complete Implementation}
+\label{app:impl}
+
+\subsection{Data Preprocessing}
+
+\begin{verbatim}
+# preprocess/extract_coeffs.py
+import scipy.fft
+import numpy as np
+
+
+def extract_dct_coeffs(v_star: np.ndarray, M: int) -> np.ndarray:
+    """
+    Extract DCT-II coefficients from a demonstration velocity sequence.
+    Run offline; cache result as dataset field 'gt_coeffs'.
+
+    Args:
+        v_star: (K, d) demonstration velocity sequence
+        M:      number of Fourier modes to retain
+
+    Returns:
+        (M+1, d) DCT-II coefficient array
+    """
+    coeffs_full = scipy.fft.dct(v_star, axis=0, norm='ortho')  # (K, d)
+    return coeffs_full[:M + 1, :]
+
+
+def decode_coeffs_to_velocity(
+    coeffs: np.ndarray,   # (M+1, d)
+    tau:    np.ndarray,   # (N_query,)  physical time in seconds
+    T:      float,
+    K_norm: int,          # original sequence length for ortho normalization
+) -> np.ndarray:          # (N_query, d)
+    """
+    Decode DCT coefficients to velocity at arbitrary physical times.
+    Implements Eq. (3.2) of the paper.
+    """
+    M = coeffs.shape[0] - 1
+    k = np.arange(0, M + 1, dtype=np.float32)
+    norm = np.ones(M + 1)
+    norm[0] = 1.0 / np.sqrt(2)
+    norm = norm * np.sqrt(2.0 / K_norm)
+    basis = np.cos(np.pi * k[:, None] * tau[None, :] / T)  # (M+1, N_query)
+    return (coeffs * norm[:, None]).T @ basis               # (N_query, d)
+
+
+def estimate_M(dataset, energy_threshold: float = 0.95) -> int:
+    """
+    Compute the minimum M covering energy_threshold of mean spectral energy.
+    Run once before preprocessing; fix M afterward.
+    """
+    cumulative_energies = []
+    for v_star in dataset:
+        coeffs = scipy.fft.dct(v_star, axis=0, norm='ortho')
+        energy = (coeffs ** 2).sum(axis=-1)
+        cumulative_energies.append(np.cumsum(energy) / energy.sum())
+    mean_cumsum = np.stack(cumulative_energies).mean(axis=0)
+    return int(np.argmax(mean_cumsum >= energy_threshold)) + 1
+\end{verbatim}
+
+\subsection{Noise Sampling}
+
+\begin{verbatim}
+# training/noise.py
+import jax
+import jax.numpy as jnp
+
+
+def sample_freq_weighted_noise(
+    M: int, d: int, T: float, B: int,
+    sigma: float = 1.0, key=None,
+) -> jnp.ndarray:
+    """
+    Sample frequency-weighted Gaussian noise (Eq. 3.4 of the paper).
+    Replaces jax.random.normal(...) for the FM noise draw.
+
+    Returns: (B, M+1, d)
+    """
+    k_idx   = jnp.arange(0, M + 1, dtype=jnp.float32)
+    omega_k = k_idx * jnp.pi / T
+    std_k   = sigma / jnp.sqrt(1.0 + omega_k ** 2)   # (M+1,)
+    xi      = jax.random.normal(key, (B, M + 1, d))
+    return xi * std_k[None, :, None]
+\end{verbatim}
+
+\subsection{Action Expert Modifications}
+
+\begin{verbatim}
+# models/action_expert.py  (changes from pi0 highlighted)
+
+class MotifActionExpert(nn.Module):
+    def __init__(self, d_model, d_action, M, time_embed_dim=64):
+        super().__init__()
+        # [CHANGE 1] Physical time embedding (replaces step-index lookup)
+        self.time_embed  = MotifTimeEmbedding(time_embed_dim, d_model)
+
+        # [CHANGE 2] Output head: (M+1)*d instead of K*d
+        self.output_head = nn.Linear(d_model, (M + 1) * d_action)
+
+        # [CHANGE 3] State query projection and mask token
+        self.state_proj  = nn.Linear(d_action, d_model)
+        self.state_mask  = nn.Parameter(torch.zeros(d_model))
+
+        # ... (Transformer body unchanged from pi0) ...
+
+    def forward(self, c_noisy, tau, t_diffusion, z_vlm,
+                A_query=None):
+        """
+        c_noisy:     (B, M+1, d)  noisy coefficient vector
+        tau:         (B, M+1)     physical times for M+1 tokens
+        t_diffusion: (B,)         FM denoising time
+        z_vlm:       (B, d_z)     VLM embedding
+        A_query:     (B, d)       current robot state (optional)
+        """
+        B, Mp1, d = c_noisy.shape
+
+        # [CHANGE 1] Physical time embedding
+        time_emb = self.time_embed(tau)                     # (B, M+1, d_model)
+        x = self.token_proj(c_noisy) + time_emb            # (B, M+1, d_model)
+
+        # [CHANGE 3] State injection, conditioned on t_diffusion
+        if A_query is not None:
+            is_exec = (t_diffusion == 0).float()[:, None]  # (B, 1)
+            state_emb = self.state_proj(A_query)            # (B, d_model)
+            state_tok = (
+                is_exec * state_emb
+                + (1 - is_exec) * self.state_mask[None]
+            )                                               # (B, d_model)
+            x = x + state_tok.unsqueeze(1)                 # broadcast to (B, M+1, d_model)
+
+        # ... Transformer forward pass (cross-attend to z_vlm, etc.) ...
+
+        # [CHANGE 2] Output head: coefficients, not positions
+        out = self.output_head(x)                          # (B, M+1, d*... )
+        return out.reshape(B, Mp1, d)                      # (B, M+1, d)
+\end{verbatim}
+
+\subsection{Training Loss}
+
+\begin{verbatim}
+# training/motif_loss.py
+import jax, jax.numpy as jnp
+from typing import Dict, Tuple
+
+
+def motif_loss(
+    transformer, batch: Dict, z_vlm: jnp.ndarray,
+    M: int, T: float = 1.0, alpha: float = 1.0,
+    sigma: float = 1.0, key=None,
+) -> Tuple[jnp.ndarray, Dict]:
+    """
+    Full MOTIF training loss: L = L_FM + alpha * L_vel.
+
+    batch fields:
+        'gt_coeffs': (B, M+1, d)  pre-computed DCT coefficients
+        'gt_vel':    (B, K, d)    demonstration velocity sequence
+        'tau':       (B, K)       physical times (seconds)
+        'gt_states': (B, K, d)    demonstration proprioceptive states
+    """
+    B, K, d = batch['gt_vel'].shape
+    c_star   = batch['gt_coeffs']    # (B, M+1, d)
+    v_star   = batch['gt_vel']       # (B, K, d)
+    tau      = batch['tau']          # (B, K)
+    A_demo   = batch['gt_states']    # (B, K, d)
+
+    key, k1, k2 = jax.random.split(key, 3)
+
+    # -- L_FM: standard Flow Matching in coefficient space ----------
+    c0  = sample_freq_weighted_noise(M, d, T, B, sigma, k1)  # noise
+    t   = jax.random.beta(k2, 1.5, 1.0, (B,)) * 0.999 + 0.001
+    c_t = (1 - t[:, None, None]) * c_star + t[:, None, None] * c0
+    u_star = c0 - c_star             # FM vector field target
+
+    tau_coeff = make_coeff_times(M, T, B)  # (B, M+1) times for coefficient tokens
+
+    u_pred = transformer(c_t, tau=tau_coeff, t_diffusion=t, z_vlm=z_vlm)
+    L_fm = jnp.mean((u_pred - u_star) ** 2)
+
+    # -- L_vel: Fourier-decoded velocity supervision ---------------
+    t_zero   = jnp.zeros((B,))
+    # Use demonstration states (A_demo) as state query at t=0
+    # Model sees (c_star, t=0, A_demo[:, k, :]) and should output
+    # the decoded velocity matching v_star[:, k, :].
+    # We pass A_demo in a flattened way: broadcast over K, take mean.
+    # Simpler: query with the mean state, or with each step separately.
+    # Here we use a per-step loop (vmapped for efficiency):
+    def query_vel_step(A_k, tau_k):
+        # A_k: (B, d),  tau_k: (B,)
+        c_hat = transformer(
+            c_star,
+            tau=tau_coeff,
+            t_diffusion=t_zero,
+            z_vlm=z_vlm,
+            A_query=A_k,
+        )                            # (B, M+1, d)
+        # Decode to velocity at tau_k
+        # phi_k(tau) = cos(k*pi*tau/T)
+        k_idx = jnp.arange(0, M + 1, dtype=jnp.float32)
+        basis = jnp.cos(jnp.pi * k_idx * tau_k[:, None] / T)  # (B, M+1)
+        return jnp.einsum('bmd,bm->bd', c_hat, basis)          # (B, d)
+
+    # vmap over K timesteps
+    A_steps   = jnp.transpose(A_demo, (1, 0, 2))   # (K, B, d)
+    tau_steps = jnp.transpose(tau,    (1, 0))        # (K, B)
+    v_decoded = jax.vmap(query_vel_step)(A_steps, tau_steps)  # (K, B, d)
+    v_decoded = jnp.transpose(v_decoded, (1, 0, 2))           # (B, K, d)
+
+    L_vel = jnp.mean((v_decoded - v_star) ** 2)
+
+    total = L_fm + alpha * L_vel
+    return total, {'L_FM': float(L_fm), 'L_vel': float(L_vel), 'total': float(total)}
+\end{verbatim}
+
+\subsection{Validation Checklist}
+
+\begin{enumerate}[leftmargin=2em,label=\textbf{V\arabic*.}]
+  \item $\cL_{\mathrm{vel}} < 0.01\,(\text{rad/s})^2$ within 50k steps.
+    If stalled above 0.05, verify that \texttt{gt\_vel} is computed from
+    high-frequency proprioception, not finite-differenced positions.
+
+  \item $\cL_{\mathrm{FM}}$ decreases monotonically; final value comparable
+    to $\pi_0$'s FM loss.
+    If diverging, check that \texttt{gt\_coeffs} is zero-mean unit-variance
+    normalized per dimension.
+
+  \item \textbf{Frequency robustness pre-screen (E1).}
+    After 50k steps, evaluate at 10\,Hz, 50\,Hz, 200\,Hz.
+    Trajectory shapes should be qualitatively similar.
+    If 200\,Hz is erratic, verify that $\texec_k$ is in seconds, not steps.
+
+  \item \textbf{Mid-denoising sanity (E3 pre-screen).}
+    Execute $\ccoeff_{t=0.5}$ (stop denoising halfway).
+    The robot should approach the object coherently.
+    If stationary or diverging, the velocity supervision loss is not
+    propagating gradients to the time embedding.
+
+  \item \textbf{State mask correctness.}
+    At training time with $\tdiff = 0$, confirm the action expert receives
+    \texttt{A\_demo} (real state), not \texttt{state\_mask}.
+    At $\tdiff > 0$, confirm it receives \texttt{state\_mask}.
+    Violation is the most common silent bug: the state query is active
+    during denoising and inactive during velocity supervision,
+    which nullifies Change~3.
+
+  \item \textbf{LEITMOTIF chunk boundary.}
+    Over 10 consecutive chunks, measure
+    $\norm{a_0^{(k+1)} - a_{K-1}^{(k)}}_\infty$.
+    Should be machine-precision zero (initial condition is always true sensor state).
+\end{enumerate}
+
+\subsection{Common Pitfalls}
+
+\begin{description}[leftmargin=2em]
+  \item[\textbf{P1: Time in wrong units.}]
+    Passing step indices $k$ instead of physical times $\texec_k = kT/K$ to
+    \texttt{MotifTimeEmbedding}.
+    \textit{Symptom}: E1 fails; 200\,Hz and 50\,Hz trajectories look completely
+    different.
+    \textit{Fix}: always compute
+    \texttt{tau = torch.arange(K) * T / K}.
+
+  \item[\textbf{P2: Velocity not normalized.}]
+    The FM target \texttt{gt\_coeffs} must be normalized identically to how
+    $\pi_0$ normalizes position chunks.
+    \textit{Symptom}: $\cL_{\mathrm{FM}}$ is $10\times$ the $\pi_0$ baseline.
+    \textit{Fix}: normalize per-dimension mean and std of
+    $\{\dot{a}_k\}$ across the training set.
+
+  \item[\textbf{P3: State mask conditioned on \texttt{train} flag, not $\tdiff$.}]
+    If the mask is applied during all of training, the velocity supervision loss
+    at $\tdiff = 0$ also sees a masked state---training and inference are mismatched,
+    and Change~3 has no effect.
+    \textit{Symptom}: adding state query input does not improve LEITMOTIF performance.
+    \textit{Fix}: condition mask on \texttt{(t\_diffusion == 0)}, as in Eq.~\eqref{eq:state_mask}.
+
+  \item[\textbf{P4: $M$ too small.}]
+    High-frequency trajectory segments (contact transitions, rapid direction changes)
+    are truncated.
+    \textit{Symptom}: systematic position error at velocity peaks.
+    \textit{Fix}: run \texttt{estimate\_M(dataset, threshold=0.99)} and increase $M$.
+\end{description}
+
+\end{document}

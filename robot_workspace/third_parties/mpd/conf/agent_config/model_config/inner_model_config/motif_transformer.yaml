@@ -1,0 +1,34 @@
+_target_: movement_primitive_diffusion.models.motif_transformer_inner_model.MOTIFTransformerInnerModel
+_recursive_: False
+
+state_size: null  # set in python based on encoder
+action_size: null  # set in python based on process_batch
+
+t_pred: ${t_pred}
+t_obs: ${t_obs}
+
+use_physical_time_encoding: True  # M1 ablation: set False to use learnable position embedding
+time_embed_dim: 64  # Dimension of sinusoidal time encoding
+n_layers: 6
+n_heads: 4
+embedding_size: 256
+n_cond_layers: 0  # use MLP instead of transformer encoder
+dropout_probability_embedding: 0.0
+dropout_probability_attention: 0.3
+
+sigma_embedding_config:
+  _target_: movement_primitive_diffusion.networks.sigma_embeddings.SinusoidalEmbedding
+  _recursive_: False
+  embedding_size: ${..embedding_size}
+  hidden_size_factor: 4
+
+motif_handler_config:
+  _target_: movement_primitive_diffusion.utils.motif_utils.MOTIFHandler
+  _recursive_: False
+  num_dof: ${..action_size}
+  dt: ${dataset_config.dt}
+  traj_steps: ${t_pred}
+  num_modes: 8  # Must be < t_pred (12), using 8 for safety
+  chunk_duration: 1.0
+  device: ${device}
+  use_dct: True  # M3 ablation: set False to operate on raw velocity frames

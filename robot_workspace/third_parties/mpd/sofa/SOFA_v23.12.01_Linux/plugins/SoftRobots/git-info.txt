@@ -1,0 +1,23 @@
+# Git info for SoftRobots
+
+## Current commit
+## git rev-parse --abbrev-ref HEAD
+bfa638194ce0e39c37d86558758cc194458e01f2
+
+## Branches containing current commit
+## git branch -a --contains bfa638194ce0e39c37d86558758cc194458e01f2 
+* (HEAD detached at origin/v23.12)
+  remotes/origin/v23.12
+
+## Remotes
+## git remote -vv 
+origin	https://github.com/SofaDefrost/SoftRobots (fetch)
+origin	https://github.com/SofaDefrost/SoftRobots (push)
+
+## More info
+## git log --pretty -n 1
+commit bfa638194ce0e39c37d86558758cc194458e01f2
+Author: Paul Baksic <30337881+bakpaul@users.noreply.github.com>
+Date:   Fri Mar 22 14:51:18 2024 +0100
+
+    update builder and script version (#271)

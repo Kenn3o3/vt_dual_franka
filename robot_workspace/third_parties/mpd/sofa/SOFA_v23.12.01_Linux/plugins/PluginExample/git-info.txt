@@ -1,0 +1,23 @@
+# Git info for PluginExample
+
+## Current commit
+## git rev-parse --abbrev-ref HEAD
+2adc07e740c11df5478ae334f49c4ed1bec37881
+
+## Branches containing current commit
+## git branch -a --contains 2adc07e740c11df5478ae334f49c4ed1bec37881 
+* (HEAD detached at origin/v23.12)
+  remotes/origin/v23.12
+
+## Remotes
+## git remote -vv 
+origin	https://github.com/sofa-framework/PluginExample (fetch)
+origin	https://github.com/sofa-framework/PluginExample (push)
+
+## More info
+## git log --pretty -n 1
+commit 2adc07e740c11df5478ae334f49c4ed1bec37881
+Author: bakpaul <bakpaul@hotmail.fr>
+Date:   Tue Mar 26 16:34:13 2024 +0100
+
+    Update ci script branch name

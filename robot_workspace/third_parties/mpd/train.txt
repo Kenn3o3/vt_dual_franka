@@ -1,0 +1,9 @@
+# 四个baseline
+bash baseline_train.sh obstacle_avoidance dp          # Baseline 1: Transformer DP
+bash baseline_train.sh obstacle_avoidance fm          # Baseline 2: Transformer FM  
+bash baseline_train.sh obstacle_avoidance prodmp_fm   # Baseline 3: ProDMP FM
+bash baseline_train.sh obstacle_avoidance motif_fm    # Baseline 4: MOTIF FM
+bash baseline_train.sh obstacle_avoidance sfp         # Baseline 5: Transformer Streaming FM
+
+# 一键训练所有
+bash run_all_baselines.sh obstacle_avoidance

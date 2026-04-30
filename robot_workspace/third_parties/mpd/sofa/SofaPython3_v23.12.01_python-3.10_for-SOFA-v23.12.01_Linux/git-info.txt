@@ -1,0 +1,22 @@
+# Git info for SofaPython3
+
+## Current commit
+## git rev-parse --abbrev-ref HEAD
+fd199b16dff8fb26747d59a00b1fbc27bff2912a
+
+## Branches containing current commit
+## git branch -a --contains fd199b16dff8fb26747d59a00b1fbc27bff2912a 
+* (HEAD detached at v23.12.01)
+
+## Remotes
+## git remote -vv 
+origin	https://github.com/sofa-framework/SofaPython3 (fetch)
+origin	https://github.com/sofa-framework/SofaPython3 (push)
+
+## More info
+## git log --pretty -n 1
+commit fd199b16dff8fb26747d59a00b1fbc27bff2912a
+Author: Paul Baksic <paul.baksic@outlook.fr>
+Date:   Thu Mar 28 20:34:13 2024 +0100
+
+    Update ci script to generate release for tags

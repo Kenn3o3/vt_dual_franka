@@ -1,0 +1,30 @@
+# Python module metadata folder
+*.egg-info
+
+# Python cache files
+*.pyc
+__pycache__
+*.py.log
+*.py.qglviewer.view
+
+# IDEs
+.idea
+.vscode
+
+# hydra logs
+outputs
+multirun
+results
+results_backup
+
+# wandb logs
+swanlog
+
+# logs
+logs
+
+# data folder
+# data
+
+# stored model checkpoints
+model_checkpoints

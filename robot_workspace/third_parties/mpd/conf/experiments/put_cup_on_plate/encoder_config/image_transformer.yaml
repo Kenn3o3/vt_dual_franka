@@ -1,0 +1,24 @@
+# @package agent_config.encoder_config
+_target_: movement_primitive_diffusion.encoder.Encoder
+_recursive_: False
+
+t_obs: ${t_obs}
+
+network_configs:
+  - observation_key: rgb_wrist
+    feature_size: null
+    network_config:
+      _target_: movement_primitive_diffusion.networks.resnet.IndependentTimeStepsResNet
+      feature_size: null
+      output_size: ${image_embedding_size}
+      flatten_time: False
+  - observation_key: rgb_third_person
+    feature_size: null
+    network_config:
+      _target_: movement_primitive_diffusion.networks.resnet.IndependentTimeStepsResNet
+      feature_size: null
+      output_size: ${image_embedding_size}
+      flatten_time: False
+
+aggregator_config:
+  _target_: movement_primitive_diffusion.aggregators.concatenate.ConcatenateAggregator

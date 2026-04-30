@@ -1,0 +1,32 @@
+# Git info for InvertibleFVM
+
+## Current commit
+## git rev-parse --abbrev-ref HEAD
+d4acd85e1e819b9e093b275d51309ba7e3304cd5
+
+## Branches containing current commit
+## git branch -a --contains d4acd85e1e819b9e093b275d51309ba7e3304cd5 
+* (HEAD detached at origin/v23.12)
+  master
+  remotes/origin/HEAD -> origin/master
+  remotes/origin/master
+  remotes/origin/pr/3/head
+  remotes/origin/v22.12
+  remotes/origin/v23.06
+  remotes/origin/v23.12
+
+## Remotes
+## git remote -vv 
+origin	https://github.com/sofa-framework/InvertibleFVM (fetch)
+origin	https://github.com/sofa-framework/InvertibleFVM (push)
+
+## More info
+## git log --pretty -n 1
+commit d4acd85e1e819b9e093b275d51309ba7e3304cd5
+Merge: 00ebf41 62663be
+Author: Hugo <hugo.talbot@sofa-framework.org>
+Date:   Tue Oct 18 20:05:04 2022 +0200
+
+    Merge pull request #2 from alxbilger/requiredplugins
+    
+    Set required plugins

@@ -1,0 +1,23 @@
+# Git info for BeamAdapter
+
+## Current commit
+## git rev-parse --abbrev-ref HEAD
+fe0bb8fbf87a90613fe8d81cc9c2edf0e0e15f1c
+
+## Branches containing current commit
+## git branch -a --contains fe0bb8fbf87a90613fe8d81cc9c2edf0e0e15f1c 
+* (HEAD detached at origin/v23.12)
+  remotes/origin/v23.12
+
+## Remotes
+## git remote -vv 
+origin	https://github.com/sofa-framework/BeamAdapter (fetch)
+origin	https://github.com/sofa-framework/BeamAdapter (push)
+
+## More info
+## git log --pretty -n 1
+commit fe0bb8fbf87a90613fe8d81cc9c2edf0e0e15f1c
+Author: Frederick Roy <froy@lnrobo.com>
+Date:   Mon Mar 25 11:58:53 2024 +0900
+
+    fix regression test version

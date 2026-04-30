@@ -1,0 +1,10 @@
+_target_: movement_primitive_diffusion.models.motif_diffusion_model.MOTIFDiffusionModel
+_recursive_: False
+
+defaults:
+  - inner_model_config: motif_transformer
+  - scaling_config: trajectory_karras_scaling
+
+alpha_vel: 1.0  # Weight for velocity supervision loss (α in paper)
+algorithm: diffusion  # 'diffusion' or 'flow_matching'
+use_ot_sampler: False  # For flow matching

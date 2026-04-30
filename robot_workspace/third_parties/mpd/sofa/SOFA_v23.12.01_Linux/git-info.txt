@@ -1,0 +1,23 @@
+# Git info for Sofa
+
+## Current commit
+## git rev-parse --abbrev-ref HEAD
+faddf5d1e5c89a5e85b62df14eb2b121eb8b86f4
+
+## Branches containing current commit
+## git branch -a --contains faddf5d1e5c89a5e85b62df14eb2b121eb8b86f4 
+* (HEAD detached at faddf5d1e5)
+  remotes/origin/v23.12
+
+## Remotes
+## git remote -vv 
+origin	https://github.com/sofa-framework/sofa.git (fetch)
+origin	https://github.com/sofa-framework/sofa.git (push)
+
+## More info
+## git log --pretty -n 1
+commit faddf5d1e5c89a5e85b62df14eb2b121eb8b86f4
+Author: bakpaul <bakpaul@hotmail.fr>
+Date:   Thu Mar 28 10:55:21 2024 +0100
+
+    [CMake] Bump version to v23.12.01

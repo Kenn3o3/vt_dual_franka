@@ -1,0 +1,23 @@
+# Git info for Registration
+
+## Current commit
+## git rev-parse --abbrev-ref HEAD
+59ef281fffd085854dec8b22f642495623909910
+
+## Branches containing current commit
+## git branch -a --contains 59ef281fffd085854dec8b22f642495623909910 
+* (HEAD detached at origin/v23.12)
+  remotes/origin/v23.12
+
+## Remotes
+## git remote -vv 
+origin	https://github.com/sofa-framework/Registration (fetch)
+origin	https://github.com/sofa-framework/Registration (push)
+
+## More info
+## git log --pretty -n 1
+commit 59ef281fffd085854dec8b22f642495623909910
+Author: bakpaul <bakpaul@hotmail.fr>
+Date:   Tue Mar 26 16:32:04 2024 +0100
+
+    Update ci script branch name

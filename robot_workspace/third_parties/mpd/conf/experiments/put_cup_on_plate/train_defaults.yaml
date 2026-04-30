@@ -1,0 +1,52 @@
+# @package _global_
+defaults:
+  - dataset_config: dataset
+  - workspace_config: dummy
+  - _self_
+
+performance_metric: val_loss
+performance_direction: min
+device: auto
+
+t_obs: 3
+t_pred: 12
+t_act: 12
+predict_past: False
+
+train_split: 0.9
+dataset_fully_on_gpu: False
+trajectory_dir: null
+
+data_loader_config:
+  shuffle: True
+  pin_memory: False
+  num_workers: 0
+  batch_size: 128
+
+epochs: 300
+early_stopping: False
+eval_in_env_after_epochs: 0
+num_trajectories_in_env: 0
+save_distance: 50
+
+group_from_overrides: False
+name_from_overrides: True
+ignore_in_name:
+  - group
+  - put_cup_on_plate
+
+swanlab:
+  entity: motif
+  project: baseline-comparison
+  group: default
+  mode: disabled
+
+task_name: put_cup_on_plate
+method_name: mpd
+
+hydra:
+  run:
+    dir: results/${task_name}/${method_name}/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: results/${task_name}/${method_name}_multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}

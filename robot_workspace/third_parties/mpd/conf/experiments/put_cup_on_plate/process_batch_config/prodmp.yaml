@@ -1,0 +1,14 @@
+# @package agent_config.process_batch_config
+defaults:
+  - defaults
+
+_target_: movement_primitive_diffusion.datasets.process_batch.ProcessBatchProDMP
+_recursive_: False
+
+initial_values_come_from_action_data: False
+
+initial_position_keys:
+  - agent_pos
+
+initial_velocity_keys:
+  - agent_vel

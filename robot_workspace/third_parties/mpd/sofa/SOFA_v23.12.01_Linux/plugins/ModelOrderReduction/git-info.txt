@@ -1,0 +1,23 @@
+# Git info for ModelOrderReduction
+
+## Current commit
+## git rev-parse --abbrev-ref HEAD
+5d6bd8f0f44ce1d6290d99945e1fcae44ae9c7d4
+
+## Branches containing current commit
+## git branch -a --contains 5d6bd8f0f44ce1d6290d99945e1fcae44ae9c7d4 
+* (HEAD detached at 5d6bd8f)
+  remotes/origin/v23.12
+
+## Remotes
+## git remote -vv 
+origin	https://github.com/SofaDefrost/ModelOrderReduction.git (fetch)
+origin	https://github.com/SofaDefrost/ModelOrderReduction.git (push)
+
+## More info
+## git log --pretty -n 1
+commit 5d6bd8f0f44ce1d6290d99945e1fcae44ae9c7d4
+Author: bakpaul <bakpaul@hotmail.fr>
+Date:   Tue Mar 26 16:43:08 2024 +0100
+
+    Update ci script branch name

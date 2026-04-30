@@ -1,0 +1,23 @@
+# Git info for ShapeMatchingPlugin
+
+## Current commit
+## git rev-parse --abbrev-ref HEAD
+9aef1fd329b732bd6834a5a17aab71eea186941f
+
+## Branches containing current commit
+## git branch -a --contains 9aef1fd329b732bd6834a5a17aab71eea186941f 
+* (HEAD detached at origin/v23.12)
+  remotes/origin/v23.12
+
+## Remotes
+## git remote -vv 
+origin	https://github.com/sofa-framework/ShapeMatchingPlugin (fetch)
+origin	https://github.com/sofa-framework/ShapeMatchingPlugin (push)
+
+## More info
+## git log --pretty -n 1
+commit 9aef1fd329b732bd6834a5a17aab71eea186941f
+Author: bakpaul <bakpaul@hotmail.fr>
+Date:   Tue Mar 26 16:31:21 2024 +0100
+
+    Update ci script branch name

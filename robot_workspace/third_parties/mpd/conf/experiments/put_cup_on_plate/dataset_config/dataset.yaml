@@ -1,0 +1,37 @@
+# @package dataset_config
+_target_: movement_primitive_diffusion.datasets.trajectory_dataset.SubsequenceTrajectoryDataset
+_recursive_: False
+
+subsequence_length: ${eval:'${t_obs}+${t_pred}-1'}
+trajectory_dirs: null
+
+keys:
+  - action
+  - agent_pos
+  - agent_vel
+  - action_vel
+
+dt: 0.1
+target_dt: null
+normalize_keys:
+  - action
+  - agent_pos
+normalize_symmetrically: True
+standardize_keys: []
+scaler_values:
+  action:
+    min: null
+    max: null
+  agent_pos:
+    min: null
+    max: null
+
+image_keys: []
+image_sizes: []
+crop_sizes: []
+random_crop: True
+normalize_images: True
+
+recalculate_velocities_from_to:
+  - [agent_pos, agent_vel]
+  - [action, action_vel]

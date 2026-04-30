@@ -1,0 +1,25 @@
+# @package agent_config.process_batch_config
+defaults:
+  - defaults
+
+_target_: movement_primitive_diffusion.datasets.process_batch_motif.ProcessBatchMOTIF
+_recursive_: False
+
+initial_values_come_from_action_data: True
+
+initial_position_keys:
+  - loop_tpsdc_state_action
+
+initial_velocity_keys:
+  - loop_tpsdc_velocity_action
+
+motif_handler_config:
+  _target_: movement_primitive_diffusion.utils.motif_utils.MOTIFHandler
+  _recursive_: False
+  num_dof: null  # set in python based on action_sizes
+  dt: ${dataset_config.dt}
+  traj_steps: ${t_pred}
+  num_modes: 1  # Data: M=1 covers ~100% DCT energy; sigma[0]/sigma[8]=3321x without per-mode norm makes M=8 extremely harmful
+  chunk_duration: 1.0
+  use_dct: True  # M3 ablation: set False to operate on raw velocity frames
+  device: ${device}

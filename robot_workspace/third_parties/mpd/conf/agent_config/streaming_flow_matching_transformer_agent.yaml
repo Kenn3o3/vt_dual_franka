@@ -1,0 +1,41 @@
+_target_: movement_primitive_diffusion.agents.streaming_flow_matching_agent.StreamingFlowMatchingAgent
+_recursive_: False
+
+defaults:
+  - model_config: streaming_flow_matching_model
+  - override model_config/inner_model_config: transformer
+  - _self_
+
+device: null  # set in python based on main config
+
+num_integration_steps: 50  # Number of ODE integration steps for inference
+solver: euler  # ODE solver: "euler", "heun", or "rk4"
+
+t_obs: ${t_obs}
+predict_past: ${predict_past}
+
+use_ema: True
+ema_config:
+  decay: 0.999  # Changed from 0.9999 for fair comparison with MOTIF
+  min_decay: 0.0
+  update_after_step: 0
+  use_ema_warmup: True
+  inv_gamma: 1.0
+  power: 0.75
+
+special_optimizer_function: True
+special_optimizer_config:
+  model_weight_decay: 1.0e-3
+  encoder_weight_decay: 1.0e-6
+  learning_rate: 1.0e-4
+  betas: [0.95, 0.999]  # Changed from [0.9, 0.95] for fair comparison with MOTIF
+  eps: 1.0e-8
+
+optimizer_config: null
+
+lr_scheduler_config:
+  _target_: movement_primitive_diffusion.utils.lr_scheduler.get_scheduler
+  name: cosine
+  num_warmup_steps: 500  # Changed from 1000 for fair comparison with MOTIF
+  num_training_steps: null  # set in python based on dataloader size and number of epochs
+  last_epoch: -1

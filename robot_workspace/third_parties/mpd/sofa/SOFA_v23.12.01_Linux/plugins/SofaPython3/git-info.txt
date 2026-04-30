@@ -1,0 +1,23 @@
+# Git info for SofaPython3
+
+## Current commit
+## git rev-parse --abbrev-ref HEAD
+2b02599571831dbfa7e93a551d9e2573a8ab876a
+
+## Branches containing current commit
+## git branch -a --contains 2b02599571831dbfa7e93a551d9e2573a8ab876a 
+* (HEAD detached at origin/v23.12)
+  remotes/origin/v23.12
+
+## Remotes
+## git remote -vv 
+origin	https://github.com/sofa-framework/SofaPython3 (fetch)
+origin	https://github.com/sofa-framework/SofaPython3 (push)
+
+## More info
+## git log --pretty -n 1
+commit 2b02599571831dbfa7e93a551d9e2573a8ab876a
+Author: bakpaul <bakpaul@hotmail.fr>
+Date:   Tue Mar 26 16:33:17 2024 +0100
+
+    Update ci script branch name
