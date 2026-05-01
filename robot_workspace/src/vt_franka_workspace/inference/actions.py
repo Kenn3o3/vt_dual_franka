@@ -76,12 +76,15 @@ class ActionExecutor:
         self._last_gripper_width = None
 
     def execute(self, action: Action, *, source: str = "policy_runner") -> None:
+        self._execute_gripper(action, source=source)
         if action.target_tcp is not None:
             self.controller.queue_tcp(
                 list(action.target_tcp),
                 source=source,
                 target_duration_sec=action.target_duration_sec,
             )
+
+    def _execute_gripper(self, action: Action, *, source: str) -> None:
         if action.gripper_closed is True and self._last_gripper_closed is not True:
             self.controller.grasp_gripper(
                 velocity=action.gripper_velocity,

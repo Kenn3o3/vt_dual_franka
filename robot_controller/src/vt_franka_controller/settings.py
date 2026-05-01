@@ -36,6 +36,8 @@ class ControlSettings(BaseModel):
     reset_settle_rotation_threshold_deg: float = 3.0
     reset_settle_timeout_sec: float = 3.0
     reset_settle_dwell_sec: float = 0.3
+    max_policy_pos_speed_m_s: float = float("inf")
+    max_policy_rot_speed_rad_s: float = float("inf")
     max_queue_size: int = 256
 
 

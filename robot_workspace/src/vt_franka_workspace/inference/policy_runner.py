@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import json
 import logging
 import re
 import socket
@@ -120,6 +122,7 @@ class PolicyRunner:
         self._episode_error: Exception | None = None
         self._policy_terminated = False
         self._timeout_reached = False
+        self._pending_outcome_episode_dir: Path | None = None
         self._last_status_print_wall_time = 0.0
         self._frozen_rgb_snapshots: dict[str, OperatorSnapshot] = {}
 
@@ -171,6 +174,14 @@ class PolicyRunner:
     def operator_stop_episode(self) -> None:
         with self._operator_lock:
             self._stop_episode_locked()
+
+    def operator_mark_episode_success(self) -> None:
+        with self._operator_lock:
+            self._mark_latest_episode_outcome_locked("success")
+
+    def operator_mark_episode_fail(self) -> None:
+        with self._operator_lock:
+            self._mark_latest_episode_outcome_locked("fail")
 
     def operator_discard_latest_episode(self) -> None:
         with self._operator_lock:
@@ -270,6 +281,10 @@ class PolicyRunner:
                 self._run_terminal_action(self.operator_start_episode)
             elif command == "e":
                 self._run_terminal_action(self.operator_stop_episode)
+            elif command == "s":
+                self._run_terminal_action(self.operator_mark_episode_success)
+            elif command == "f":
+                self._run_terminal_action(self.operator_mark_episode_fail)
             elif command == "d":
                 self._handle_terminal_discard(key_reader)
             elif command == "q":
@@ -301,6 +316,10 @@ class PolicyRunner:
     def _move_to_initial_pose_locked(self) -> None:
         if self._current_episode_dir is not None:
             raise OperatorActionError("Cannot move to initial pose while a policy episode is active. Stop/save it first.")
+        if self._pending_outcome_episode_dir is not None:
+            raise OperatorActionError(
+                f"Mark {self._pending_outcome_episode_dir.name} as success (S) or fail (F) before resetting."
+            )
         if self.inference.initial_eef_pose_xyz_rpy_deg is None:
             self._initial_pose_completed = True
             self.sessions.record_operator_event("initial_pose_skipped", {"reason": "not_configured"})
@@ -339,7 +358,7 @@ class PolicyRunner:
         )
         self._wait_for_gripper_width_locked(
             target_width=open_width,
-            tolerance_m=max(float(self.workspace.teleop.gripper_width_vis_precision), 0.002),
+            tolerance_m=max(float(self.workspace.teleop.gripper_width_vis_precision), 0.006),
             timeout_sec=5.0,
         )
         self.sessions.record_operator_event("initial_gripper_open_requested", {"target_width": open_width})
@@ -347,13 +366,17 @@ class PolicyRunner:
     def _wait_for_gripper_width_locked(self, *, target_width: float, tolerance_m: float, timeout_sec: float) -> None:
         deadline = time.monotonic() + max(float(timeout_sec), 0.0)
         last_width: float | None = None
+        min_open_width = max(float(self.workspace.teleop.min_gripper_width), target_width * 0.9)
         while time.monotonic() <= deadline:
             state = self.state_monitor.get_state(max_age_sec=self.inference.modality.controller_state_max_age_sec)
             last_width = float(state.gripper_width)
-            if abs(last_width - target_width) <= tolerance_m:
+            if last_width >= min_open_width or abs(last_width - target_width) <= tolerance_m:
                 return
             time.sleep(0.05)
-        raise RuntimeError(f"Initial gripper did not open to {target_width:.4f}m; last width={last_width}")
+        raise RuntimeError(
+            f"Initial gripper did not open near {target_width:.4f}m "
+            f"(required >= {min_open_width:.4f}m); last width={last_width}"
+        )
 
     def _start_episode_locked(self) -> None:
         self._poll_episode_status_locked()
@@ -438,6 +461,7 @@ class PolicyRunner:
         )
         if outcome == "saved":
             self._write_eval_videos(episode_dir)
+            self._pending_outcome_episode_dir = episode_dir
         self._latest_saved_episode_dir = episode_dir if outcome == "saved" else self._latest_saved_episode_dir
         self.sessions.record_operator_event(
             "episode_stopped",
@@ -447,6 +471,8 @@ class PolicyRunner:
             LOGGER.warning("Policy episode failed: %s", self._episode_error)
         else:
             LOGGER.info("Policy episode saved: %s (%s)", episode_dir, termination_reason)
+            if outcome == "saved":
+                LOGGER.info("Mark outcome before reset: S=success, F=fail")
 
     def _write_eval_videos(self, episode_dir: Path) -> None:
         if not self.inference.eval.enabled:
@@ -482,6 +508,46 @@ class PolicyRunner:
         self.sessions.record_operator_event("episode_discarded", {"episode_dir": str(episode_dir)})
         LOGGER.info("Discarded policy episode: %s", episode_dir)
         self._latest_saved_episode_dir = self.sessions.get_latest_saved_episode_dir()
+        if self._pending_outcome_episode_dir == episode_dir:
+            self._pending_outcome_episode_dir = None
+
+    def _mark_latest_episode_outcome_locked(self, outcome: str) -> None:
+        self._poll_episode_status_locked()
+        if outcome not in {"success", "fail"}:
+            raise ValueError(f"Unsupported policy episode outcome: {outcome}")
+        if self._current_episode_dir is not None:
+            raise OperatorActionError("Cannot mark outcome while a policy episode is active. Press E first.")
+        episode_dir = self._pending_outcome_episode_dir or self._latest_saved_episode_dir or self.sessions.get_latest_saved_episode_dir()
+        if episode_dir is None:
+            raise OperatorActionError("No saved policy episode to mark.")
+        self._write_episode_outcome_locked(episode_dir, outcome)
+        self._pending_outcome_episode_dir = None
+        self.sessions.record_operator_event("episode_outcome_marked", {"episode": episode_dir.name, "outcome": outcome})
+        LOGGER.info("Marked %s as %s", episode_dir.name, outcome)
+
+    def _write_episode_outcome_locked(self, episode_dir: Path, outcome: str) -> None:
+        run_dir = self.sessions.get_active_run_dir()
+        if run_dir is None:
+            raise RuntimeError("No active policy run for outcome logging")
+        path = run_dir / "episode_outcomes.csv"
+        rows: list[tuple[str, str]] = []
+        if path.exists():
+            with path.open("r", newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                for row in reader:
+                    episode = row.get("episode")
+                    existing_outcome = row.get("outcome")
+                    if episode and existing_outcome and episode != episode_dir.name:
+                        rows.append((existing_outcome, episode))
+        rows.append((outcome, episode_dir.name))
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["outcome", "episode"])
+            writer.writerows(rows)
+        manifest_path = episode_dir / "episode_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest.setdefault("metadata", {})["operator_outcome"] = outcome
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
     def _is_ready_for_episode_locked(self) -> tuple[bool, list[str]]:
         reasons: list[str] = []
@@ -492,6 +558,8 @@ class PolicyRunner:
         reasons.extend(modality_reasons)
         if not self._initial_pose_completed:
             reasons.append("robot has not been moved to the policy initial pose with H")
+        if self._pending_outcome_episode_dir is not None:
+            reasons.append(f"mark {self._pending_outcome_episode_dir.name} as success (S) or fail (F)")
         for name, worker in self.workers.items():
             if worker.required and worker.error is not None:
                 reasons.append(f"{name} failed: {worker.error}")
@@ -660,6 +728,10 @@ class PolicyRunner:
             "active_episode_name": None if self._current_episode_dir is None else self._current_episode_dir.name,
             "latest_saved_episode": None if self._latest_saved_episode_dir is None else str(self._latest_saved_episode_dir),
             "latest_saved_episode_name": None if self._latest_saved_episode_dir is None else self._latest_saved_episode_dir.name,
+            "pending_outcome_episode": None if self._pending_outcome_episode_dir is None else str(self._pending_outcome_episode_dir),
+            "pending_outcome_episode_name": None
+            if self._pending_outcome_episode_dir is None
+            else self._pending_outcome_episode_dir.name,
             "next_episode_index": next_episode_index,
             "next_episode_name": f"episode_{next_episode_index:04d}",
             "quest_connected": None,
@@ -674,9 +746,11 @@ class PolicyRunner:
                 for name, worker in self.workers.items()
             },
             "allowed_actions": {
-                "reset": self._current_episode_dir is None,
+                "reset": self._current_episode_dir is None and self._pending_outcome_episode_dir is None,
                 "start": ready and self._current_episode_dir is None,
                 "stop": self._current_episode_dir is not None,
+                "mark_success": self._current_episode_dir is None and self._pending_outcome_episode_dir is not None,
+                "mark_fail": self._current_episode_dir is None and self._pending_outcome_episode_dir is not None,
                 "discard": self._current_episode_dir is None
                 and (self._latest_saved_episode_dir or self.sessions.get_latest_saved_episode_dir()) is not None,
                 "quit": self._current_episode_dir is None,
@@ -753,7 +827,7 @@ class PolicyRunner:
         print("- Controller PC: vt-franka-controller is already running", flush=True)
         print("- Required policy inputs are producing fresh samples", flush=True)
         print("- Press H to move to the policy initial EEF pose when one is configured", flush=True)
-        print("Hotkeys: H=initial pose  R=start policy  E=end/save  D=discard last saved  Q=quit", flush=True)
+        print("Hotkeys: H=initial pose  R=start policy  E=end/save  S=success  F=fail  D=discard last saved  Q=quit", flush=True)
         if self.workspace.operator_ui.enabled:
             print(
                 f"Operator UI: http://{self.workspace.operator_ui.host}:{self.workspace.operator_ui.port}/operator",

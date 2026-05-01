@@ -1,5 +1,5 @@
 type: mpd
-checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/put_cup_on_plate/mpd/dp/dp_state/best_model.pth
+checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/put_cup_on_plate/mpd/dp/dp_state/model_last_epoch.pth
 config:
   algorithm: dp
   task_name: put_cup_on_plate

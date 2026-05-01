@@ -6,12 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+import pytest
 
 from vt_franka_shared.models import ControllerState
 from vt_franka_workspace.config import InferenceRuntimeSettings, ModalitySettings, RgbCameraSettings, WorkspaceSettings
 from vt_franka_workspace.inference import ObservationAssembler, ObservationHistory, PolicyRunner
 from vt_franka_workspace.inference.actions import ActionExecutor
 from vt_franka_workspace.inference.policy_runner import GripperStatusEstimator
+from vt_franka_workspace.operator import OperatorActionError
 from vt_franka_workspace.policies.base import Policy
 from vt_franka_workspace.recording import RunSessionManager
 from vt_franka_workspace.runtime import eef_xyz_rpy_deg_to_tcp_pose
@@ -22,6 +24,7 @@ class FakeController:
         self.tcp_targets = []
         self.gripper_moves = []
         self.gripper_grasps = []
+        self.events = []
         self.state = ControllerState(
             tcp_pose=eef_xyz_rpy_deg_to_tcp_pose([0.4, 0.0, 0.3, 180.0, 0.0, 0.0]),
             tcp_velocity=[0.0] * 6,
@@ -34,14 +37,17 @@ class FakeController:
 
     def queue_tcp(self, target_tcp, source="policy_runner", target_duration_sec=None):
         self.tcp_targets.append((list(target_tcp), source, target_duration_sec))
+        self.events.append(("tcp", list(target_tcp), source, target_duration_sec))
         self.state = self.state.model_copy(update={"tcp_pose": list(target_tcp)})
 
     def move_gripper(self, width, velocity, force_limit, source="policy_runner", blocking=False):
         self.gripper_moves.append((width, velocity, force_limit, source, blocking))
+        self.events.append(("gripper_width", width, velocity, force_limit, source, blocking))
         self.state = self.state.model_copy(update={"gripper_width": float(width), "gripper_force": 0.0})
 
     def grasp_gripper(self, velocity, force_limit, source="policy_runner", blocking=False):
         self.gripper_grasps.append((velocity, force_limit, source, blocking))
+        self.events.append(("gripper_grasp", velocity, force_limit, source, blocking))
         self.state = self.state.model_copy(update={"gripper_width": 0.0, "gripper_force": float(force_limit)})
 
 
@@ -195,6 +201,57 @@ def test_policy_runner_executes_only_exe_horizon_and_records(tmp_path: Path):
     assert manifest["metadata"]["termination_reason"] == "policy_terminate"
 
 
+def test_policy_runner_requires_outcome_mark_before_next_reset(tmp_path: Path):
+    workspace = WorkspaceSettings(
+        recording={"eval_root": tmp_path / "eval", "collect_root": tmp_path / "collect", "image_format": "jpg"},
+        operator_ui={"enabled": False},
+    )
+    inference = InferenceRuntimeSettings(
+        task_name="policy_test",
+        obs_horizon=2,
+        exe_horizon=2,
+        control_hz=100.0,
+        max_duration_sec=1.0,
+        start_countdown_sec=0.0,
+        initial_eef_pose_xyz_rpy_deg=[0.4, 0.0, 0.3, 180.0, 0.0, 0.0],
+        initial_move_duration_sec=0.01,
+        initial_pose_settle_timeout_sec=0.2,
+        initial_pose_settle_dwell_sec=0.0,
+        modality=ModalitySettings(proprioception=True),
+        eval={"enabled": False},
+    )
+    controller = FakeController()
+    runner = PolicyRunner(workspace, inference, controller, calibration=None, policy=TwoStepThenTerminatePolicy())
+    runner.sessions = RunSessionManager(tmp_path / "eval")
+    run_dir = runner.sessions.start_run("policy_test")
+    runner.state_monitor = FakeStateMonitor(controller)
+    runner.assembler = ObservationAssembler(
+        modality=inference.modality,
+        state_provider=lambda max_age_sec=None: controller.state,
+        image_format="jpg",
+    )
+    runner._initial_pose_completed = True
+
+    runner.operator_start_episode()
+    runner._wait_for_episode_finish_locked()
+
+    assert runner._pending_outcome_episode_dir is not None
+    with pytest.raises(OperatorActionError):
+        runner.operator_reset_ready_pose()
+
+    runner.operator_mark_episode_success()
+
+    assert runner._pending_outcome_episode_dir is None
+    assert (run_dir / "episode_outcomes.csv").read_text(encoding="utf-8").splitlines() == [
+        "outcome,episode",
+        "success,episode_0000",
+    ]
+    manifest = json.loads((run_dir / "episodes" / "episode_0000" / "episode_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["metadata"]["operator_outcome"] == "success"
+    runner.operator_reset_ready_pose()
+    assert runner._initial_pose_completed is True
+
+
 def test_policy_runner_groups_eval_runs_by_policy(tmp_path: Path):
     workspace = WorkspaceSettings(
         recording={"eval_root": tmp_path / "eval", "collect_root": tmp_path / "collect", "image_format": "jpg"},
@@ -239,6 +296,20 @@ def test_policy_runner_reset_initial_pose_opens_gripper(tmp_path: Path):
         True,
     )
     assert controller.state.gripper_width == workspace.teleop.max_gripper_width
+
+
+def test_policy_runner_accepts_realistic_open_gripper_width(tmp_path: Path):
+    workspace = WorkspaceSettings(
+        recording={"eval_root": tmp_path / "eval", "collect_root": tmp_path / "collect", "image_format": "jpg"},
+        operator_ui={"enabled": False},
+    )
+    inference = InferenceRuntimeSettings(eval={"enabled": False})
+    controller = FakeController()
+    runner = PolicyRunner(workspace, inference, controller, calibration=None, policy=TwoStepThenTerminatePolicy())
+    runner.state_monitor = FakeStateMonitor(controller)
+    controller.state = controller.state.model_copy(update={"gripper_width": 0.07384854555130005})
+
+    runner._wait_for_gripper_width_locked(target_width=0.078, tolerance_m=0.006, timeout_sec=0.01)
 
 
 def test_policy_runner_starts_eval_camera_without_policy_camera(monkeypatch, tmp_path: Path):
@@ -299,6 +370,20 @@ def test_action_executor_sends_gripper_state_changes_immediately():
     assert len(controller.gripper_moves) == 1
     assert controller.gripper_grasps[0][3] is True
     assert controller.gripper_moves[0][4] is True
+
+
+def test_action_executor_blocks_gripper_transition_before_tcp_waypoint():
+    controller = FakeController()
+    executor = ActionExecutor(controller)
+
+    from vt_franka_workspace.inference.actions import Action
+
+    target = eef_xyz_rpy_deg_to_tcp_pose([0.41, 0.01, 0.31, 180.0, 0.0, 0.0])
+    executor.execute(Action(target_tcp=target, target_duration_sec=0.1, gripper_closed=True))
+
+    assert controller.events[0][0] == "gripper_grasp"
+    assert controller.events[0][-1] is True
+    assert controller.events[1][0] == "tcp"
 
 
 def test_gripper_status_estimator_derives_stability():

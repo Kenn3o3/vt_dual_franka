@@ -119,7 +119,15 @@ def test_teleop_app_can_mount_operator_routes():
                 "mode": "collect",
                 "ready": False,
                 "reasons": ["blocked"],
-                "allowed_actions": {"reset": True, "start": False, "stop": False, "discard": False, "quit": True},
+                "allowed_actions": {
+                    "reset": True,
+                    "start": False,
+                    "stop": False,
+                    "mark_success": False,
+                    "mark_fail": False,
+                    "discard": False,
+                    "quit": True,
+                },
                 "controller_state": {"age_sec": 0.0},
                 "workers": {},
                 "snapshots": {"third_person": {"available": False}},
@@ -136,6 +144,12 @@ def test_teleop_app_can_mount_operator_routes():
             return None
 
         def operator_stop_episode(self):
+            return None
+
+        def operator_mark_episode_success(self):
+            return None
+
+        def operator_mark_episode_fail(self):
             return None
 
         def operator_discard_latest_episode(self):

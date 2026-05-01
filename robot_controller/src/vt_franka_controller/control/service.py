@@ -329,6 +329,8 @@ class ControllerService:
                     time=command["target_time"],
                     curr_time=current_time,
                     last_waypoint_time=self._last_waypoint_time,
+                    max_pos_speed=self.settings.control.max_policy_pos_speed_m_s,
+                    max_rot_speed=self.settings.control.max_policy_rot_speed_rad_s,
                 )
                 self._last_waypoint_time = command["target_time"]
 

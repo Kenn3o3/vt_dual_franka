@@ -41,6 +41,8 @@ def create_operator_app(
     _register_action(app, "/operator/api/actions/reset", controller.operator_reset_ready_pose)
     _register_action(app, "/operator/api/actions/start", controller.operator_start_episode)
     _register_action(app, "/operator/api/actions/stop", controller.operator_stop_episode)
+    _register_action(app, "/operator/api/actions/success", controller.operator_mark_episode_success)
+    _register_action(app, "/operator/api/actions/fail", controller.operator_mark_episode_fail)
     _register_action(app, "/operator/api/actions/discard", controller.operator_discard_latest_episode)
     _register_action(app, "/operator/api/actions/quit", controller.operator_quit)
 
@@ -400,6 +402,8 @@ _OPERATOR_PAGE = """<!doctype html>
           <button id="resetButton" onclick="invokeAction('reset')">Reset Pose <kbd>H</kbd></button>
           <button id="startButton" class="secondary" onclick="invokeAction('start')">Start Episode <kbd>R</kbd></button>
           <button id="stopButton" onclick="invokeAction('stop')">Stop / Save <kbd>E</kbd></button>
+          <button id="successButton" class="secondary" onclick="invokeAction('success')">Mark Success <kbd>S</kbd></button>
+          <button id="failButton" class="warning" onclick="invokeAction('fail')">Mark Fail <kbd>F</kbd></button>
           <button id="discardButton" class="warning" onclick="invokeAction('discard', true)">Discard Latest <kbd>D</kbd></button>
           <button id="quitButton" class="warning" onclick="invokeAction('quit', true)">Quit <kbd>Q</kbd></button>
         </div>
@@ -574,6 +578,8 @@ _OPERATOR_PAGE = """<!doctype html>
       document.getElementById('resetButton').disabled = !allowed.reset;
       document.getElementById('startButton').disabled = !allowed.start;
       document.getElementById('stopButton').disabled = !allowed.stop;
+      document.getElementById('successButton').disabled = !allowed.mark_success;
+      document.getElementById('failButton').disabled = !allowed.mark_fail;
       document.getElementById('discardButton').disabled = !allowed.discard;
       document.getElementById('quitButton').disabled = !allowed.quit;
     }
@@ -616,6 +622,8 @@ _OPERATOR_PAGE = """<!doctype html>
       h: { action: 'reset', confirm: false, buttonId: 'resetButton' },
       r: { action: 'start', confirm: false, buttonId: 'startButton' },
       e: { action: 'stop', confirm: false, buttonId: 'stopButton' },
+      s: { action: 'success', confirm: false, buttonId: 'successButton' },
+      f: { action: 'fail', confirm: false, buttonId: 'failButton' },
       d: { action: 'discard', confirm: true, buttonId: 'discardButton' },
       q: { action: 'quit', confirm: true, buttonId: 'quitButton' },
     };

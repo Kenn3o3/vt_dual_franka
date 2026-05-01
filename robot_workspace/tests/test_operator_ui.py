@@ -25,7 +25,15 @@ class FakeOperatorController:
             "reasons": [],
             "active_episode_name": None,
             "next_episode_name": "episode_0001",
-            "allowed_actions": {"reset": True, "start": self.allow_start, "stop": False, "discard": False, "quit": True},
+            "allowed_actions": {
+                "reset": True,
+                "start": self.allow_start,
+                "stop": False,
+                "mark_success": False,
+                "mark_fail": False,
+                "discard": False,
+                "quit": True,
+            },
             "controller_state": {"age_sec": 0.1},
             "workers": {},
             "snapshots": {"third_person": {"available": True, "token": self.snapshot.token, "label": self.snapshot.label}},
@@ -44,6 +52,12 @@ class FakeOperatorController:
 
     def operator_stop_episode(self) -> None:
         self.actions.append("stop")
+
+    def operator_mark_episode_success(self) -> None:
+        self.actions.append("success")
+
+    def operator_mark_episode_fail(self) -> None:
+        self.actions.append("fail")
 
     def operator_discard_latest_episode(self) -> None:
         self.actions.append("discard")

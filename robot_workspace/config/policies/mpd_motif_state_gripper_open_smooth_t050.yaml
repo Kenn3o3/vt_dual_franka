@@ -1,5 +1,5 @@
 type: mpd
-checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/put_cup_on_plate/mpd/motif/motif_state_gripper_open_smooth_t050/best_model.pth
+checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/put_cup_on_plate/mpd/motif/motif_state_gripper_open_smooth_t050/model_last_epoch.pth
 config:
   algorithm: motif
   task_name: put_cup_on_plate
