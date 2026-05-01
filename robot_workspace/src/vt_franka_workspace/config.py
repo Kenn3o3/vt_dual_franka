@@ -146,6 +146,37 @@ class ModalitySettings(BaseModel):
         return self.gelsight_markers or self.gelsight_frame
 
 
+class EvalRuntimeSettings(BaseModel):
+    enabled: bool = True
+    cameras: list[str] = Field(default_factory=lambda: ["third_person"])
+    video_hz: float = 10.0
+
+    @field_validator("cameras")
+    @classmethod
+    def _normalize_cameras(cls, value: list[str]) -> list[str]:
+        aliases = {"third": "third_person", "third_person": "third_person", "wrist": "wrist"}
+        normalized: list[str] = []
+        for camera in value:
+            for item in camera.replace(",", "+").split("+"):
+                key = item.strip().lower()
+                if not key:
+                    continue
+                if key not in aliases:
+                    supported = ", ".join(sorted([*aliases, "wrist+third"]))
+                    raise ValueError(f"Unsupported eval camera {camera!r}. Supported cameras: {supported}")
+                role = aliases[key]
+                if role not in normalized:
+                    normalized.append(role)
+        return normalized
+
+    @field_validator("video_hz")
+    @classmethod
+    def _validate_video_hz(cls, value: float) -> float:
+        if value <= 0.0:
+            raise ValueError("eval.video_hz must be positive")
+        return value
+
+
 class CollectionRuntimeSettings(BaseModel):
     controller_state_poll_hz: float = 60.0
     quest_message_timeout_sec: float = 2.0
@@ -187,6 +218,7 @@ class InferenceRuntimeSettings(BaseModel):
     initial_eef_pose_xyz_rpy_deg: list[float] | None = None
     initial_move_duration_sec: float = 2.0
     modality: ModalitySettings = Field(default_factory=ModalitySettings)
+    eval: EvalRuntimeSettings = Field(default_factory=EvalRuntimeSettings)
     rgb_cameras: dict[str, RgbCameraSettings] = Field(default_factory=dict)
     gelsight: GelsightSettings = Field(default_factory=GelsightSettings)
     controller_state_poll_hz: float = 60.0

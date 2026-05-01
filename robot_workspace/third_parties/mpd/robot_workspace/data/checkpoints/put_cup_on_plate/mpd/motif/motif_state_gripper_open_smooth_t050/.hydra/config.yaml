@@ -1,0 +1,207 @@
+dataset_config:
+  _target_: movement_primitive_diffusion.datasets.trajectory_dataset.SubsequenceTrajectoryDataset
+  _recursive_: false
+  subsequence_length: ${eval:'${t_obs}+${t_pred}-1'}
+  trajectory_dirs: null
+  keys:
+  - action
+  - agent_pos
+  - agent_vel
+  - action_vel
+  dt: 0.1
+  target_dt: null
+  normalize_keys:
+  - action
+  - agent_pos
+  normalize_symmetrically: true
+  standardize_keys: []
+  scaler_values:
+    action:
+      min: null
+      max: null
+    agent_pos:
+      min: null
+      max: null
+  image_keys: []
+  image_sizes: []
+  crop_sizes: []
+  random_crop: true
+  normalize_images: true
+  recalculate_velocities_from_to:
+  - - agent_pos
+    - agent_vel
+  - - action
+    - action_vel
+workspace_config:
+  _target_: movement_primitive_diffusion.workspaces.dummy_workspace.DummyWorkspace
+  _recursive_: false
+  env_config:
+    scaler_config:
+      scaler_values: null
+performance_metric: val_loss
+performance_direction: min
+device: cuda
+t_obs: 3
+t_pred: 12
+t_act: 12
+predict_past: false
+train_split: 0.9
+dataset_fully_on_gpu: false
+trajectory_dir: null
+data_loader_config:
+  shuffle: true
+  pin_memory: false
+  num_workers: 0
+  batch_size: 128
+epochs: 500
+early_stopping: false
+eval_in_env_after_epochs: 0
+num_trajectories_in_env: 0
+save_distance: 50
+group_from_overrides: false
+name_from_overrides: true
+ignore_in_name:
+- group
+- put_cup_on_plate
+swanlab:
+  entity: motif
+  project: baseline-comparison
+  group: motif_state_gripper_open_smooth_t050
+  mode: disabled
+task_name: put_cup_on_plate
+method_name: motif
+agent_config:
+  model_config:
+    inner_model_config:
+      _target_: movement_primitive_diffusion.models.motif_transformer_inner_model.MOTIFTransformerInnerModel
+      _recursive_: false
+      state_size: null
+      action_size: null
+      t_pred: ${t_pred}
+      t_obs: ${t_obs}
+      use_physical_time_encoding: true
+      time_embed_dim: 64
+      n_layers: 6
+      n_heads: 4
+      embedding_size: 256
+      n_cond_layers: 0
+      dropout_probability_embedding: 0.0
+      dropout_probability_attention: 0.3
+      sigma_embedding_config:
+        _target_: movement_primitive_diffusion.networks.sigma_embeddings.SinusoidalEmbedding
+        _recursive_: false
+        embedding_size: ${..embedding_size}
+        hidden_size_factor: 4
+      motif_handler_config:
+        _target_: movement_primitive_diffusion.utils.motif_utils.MOTIFHandler
+        _recursive_: false
+        num_dof: ${agent_config.model_config.inner_model_config.action_size}
+        dt: ${dataset_config.dt}
+        traj_steps: ${t_pred}
+        num_modes: 8
+        chunk_duration: 1.0
+        device: ${device}
+        use_dct: true
+    scaling_config:
+      _target_: movement_primitive_diffusion.models.scaling.TrajectoryKarrasScaling
+      _recursive_: false
+      sigma_data: 0.5
+    _target_: movement_primitive_diffusion.models.motif_diffusion_model.MOTIFDiffusionModel
+    _recursive_: false
+    alpha_vel: 1.0
+    algorithm: diffusion
+    use_ot_sampler: false
+  sigma_distribution_config:
+    _target_: movement_primitive_diffusion.distributions.RandLogLogistic
+    _recursive_: false
+    loc: 0.5
+    scale: 0.5
+    min_value: ${agent_config.sigma_min}
+    max_value: ${agent_config.sigma_max}
+  sampler_config:
+    _target_: movement_primitive_diffusion.samplers.euler.EulerSampler
+    _recursive_: false
+  noise_scheduler_config:
+    _target_: movement_primitive_diffusion.noise_schedulers.ExponentialNoiseScheduler
+    _recursive_: false
+    sigma_min: ${agent_config.sigma_min}
+    sigma_max: ${agent_config.sigma_max}
+  _target_: movement_primitive_diffusion.agents.motif_agent.MOTIFAgent
+  _recursive_: false
+  device: null
+  t_obs: ${t_obs}
+  predict_past: ${predict_past}
+  diffusion_steps: 3
+  sigma_min: 0.05
+  sigma_max: 10.0
+  use_ema: true
+  ema_config:
+    decay: 0.999
+    min_decay: 0.0
+    update_after_step: 0
+    use_ema_warmup: true
+    inv_gamma: 1.0
+    power: 0.75
+  optimizer_config:
+    _target_: torch.optim.AdamW
+    lr: 0.0001
+    betas:
+    - 0.95
+    - 0.999
+    eps: 1.0e-08
+    weight_decay: 1.0e-06
+  lr_scheduler_config:
+    _target_: movement_primitive_diffusion.utils.lr_scheduler.get_scheduler
+    name: cosine
+    num_warmup_steps: 500
+    num_training_steps: null
+    last_epoch: -1
+  special_optimizer_function: true
+  special_optimizer_config:
+    model_weight_decay: 0.001
+    encoder_weight_decay: 1.0e-06
+    learning_rate: 0.0001
+    betas:
+    - 0.95
+    - 0.999
+    eps: 1.0e-08
+  process_batch_config:
+    _target_: movement_primitive_diffusion.datasets.process_batch_motif.ProcessBatchMOTIF
+    _recursive_: false
+    t_obs: ${t_obs}
+    t_pred: ${t_pred}
+    relative_action_values: false
+    predict_past: ${predict_past}
+    action_keys:
+    - key: action
+      feature_size: null
+    observation_keys: null
+    initial_values_come_from_action_data: false
+    initial_position_keys:
+    - agent_pos
+    initial_velocity_keys:
+    - agent_vel
+    motif_handler_config:
+      _target_: movement_primitive_diffusion.utils.motif_utils.MOTIFHandler
+      _recursive_: false
+      num_dof: null
+      dt: ${dataset_config.dt}
+      traj_steps: ${t_pred}
+      num_modes: 8
+      chunk_duration: 1.0
+      use_dct: true
+      device: ${device}
+  encoder_config:
+    _target_: movement_primitive_diffusion.encoder.Encoder
+    _recursive_: false
+    t_obs: ${t_obs}
+    network_configs:
+    - observation_key: agent_pos
+      feature_size: null
+      network_config:
+        _target_: movement_primitive_diffusion.networks.layers.PassThrough
+    aggregator_config:
+      _target_: movement_primitive_diffusion.aggregators.concatenate.ConcatenateAggregator
+fixed_split: true
+train_trajectory_dir: robot_workspace/data/prepared/mpd/put_cup_on_plate/vt_franka_mpd_v1_gripper_open_smooth_t050/train
+val_trajectory_dir: robot_workspace/data/prepared/mpd/put_cup_on_plate/vt_franka_mpd_v1_gripper_open_smooth_t050/val

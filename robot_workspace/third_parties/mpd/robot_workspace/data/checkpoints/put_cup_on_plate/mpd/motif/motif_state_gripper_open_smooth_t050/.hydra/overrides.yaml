@@ -1,0 +1,17 @@
+- device=cuda
+- +fixed_split=True
+- +train_trajectory_dir=robot_workspace/data/prepared/mpd/put_cup_on_plate/vt_franka_mpd_v1_gripper_open_smooth_t050/train
+- +val_trajectory_dir=robot_workspace/data/prepared/mpd/put_cup_on_plate/vt_franka_mpd_v1_gripper_open_smooth_t050/val
+- task_name=put_cup_on_plate
+- method_name=motif
+- dataset_config.dt=0.1
+- performance_metric=val_loss
+- performance_direction=min
+- workspace_config._target_=movement_primitive_diffusion.workspaces.dummy_workspace.DummyWorkspace
+- eval_in_env_after_epochs=0
+- num_trajectories_in_env=0
+- swanlab.mode=disabled
+- swanlab.entity=motif
+- swanlab.project=baseline-comparison
+- epochs=500
+- swanlab.group=motif_state_gripper_open_smooth_t050

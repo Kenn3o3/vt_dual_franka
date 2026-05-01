@@ -35,5 +35,13 @@ The policy runner uses one inference loop for every policy:
 Policy run output is written under:
 
 ```text
-robot_workspace/data/eval/<run_name>/episodes/episode_XXXX/
+robot_workspace/data/eval/<policy_family>/<policy>/<date_time>/episodes/episode_XXXX/
 ```
+
+By default eval recording is enabled with the third-person camera at 10 Hz. Each saved episode writes:
+
+```text
+rollout.mp4
+```
+
+Use `inference.eval.enabled` and `inference.eval.cameras` to turn eval recording off or select `third`, `wrist`, or `wrist+third`.

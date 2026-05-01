@@ -101,8 +101,7 @@ def prepare_mpd_dataset(config: PrepareMPDDatasetConfig) -> PreparedDatasetResul
             manifest_entries.append(entry)
             total_steps += int(entry["num_steps"])
 
-    scaler_values = _compute_scaler_values(output_dir)
-    np.savez_compressed(output_dir / "scaler_values.npz", **_flatten_scaler_values(scaler_values))
+    write_prepared_dataset_scaler_values(output_dir)
 
     manifest = {
         "schema_version": "vt_franka_mpd_v1",
@@ -318,6 +317,17 @@ def _compute_scaler_values(output_dir: Path) -> dict[str, dict[str, np.ndarray]]
             "std": std,
         }
     return scalers
+
+
+def compute_prepared_dataset_scaler_values(output_dir: Path) -> dict[str, dict[str, np.ndarray]]:
+    return _compute_scaler_values(output_dir)
+
+
+def write_prepared_dataset_scaler_values(output_dir: Path) -> Path:
+    scaler_values = compute_prepared_dataset_scaler_values(output_dir)
+    path = Path(output_dir) / "scaler_values.npz"
+    np.savez_compressed(path, **_flatten_scaler_values(scaler_values))
+    return path
 
 
 def _flatten_scaler_values(scaler_values: dict[str, dict[str, np.ndarray]]) -> dict[str, np.ndarray]:

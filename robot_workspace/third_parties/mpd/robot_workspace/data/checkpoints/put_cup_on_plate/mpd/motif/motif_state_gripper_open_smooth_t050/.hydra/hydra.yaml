@@ -1,0 +1,184 @@
+hydra:
+  run:
+    dir: robot_workspace/data/checkpoints/put_cup_on_plate/mpd/motif/motif_state_gripper_open_smooth_t050
+  sweep:
+    dir: results/${task_name}/${method_name}_multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+  launcher:
+    _target_: hydra._internal.core_plugins.basic_launcher.BasicLauncher
+  sweeper:
+    _target_: hydra._internal.core_plugins.basic_sweeper.BasicSweeper
+    max_batch_size: null
+    params: null
+  help:
+    app_name: ${hydra.job.name}
+    header: '${hydra.help.app_name} is powered by Hydra.
+
+      '
+    footer: 'Powered by Hydra (https://hydra.cc)
+
+      Use --hydra-help to view Hydra specific help
+
+      '
+    template: '${hydra.help.header}
+
+      == Configuration groups ==
+
+      Compose your configuration from those groups (group=option)
+
+
+      $APP_CONFIG_GROUPS
+
+
+      == Config ==
+
+      Override anything in the config (foo.bar=value)
+
+
+      $CONFIG
+
+
+      ${hydra.help.footer}
+
+      '
+  hydra_help:
+    template: 'Hydra (${hydra.runtime.version})
+
+      See https://hydra.cc for more info.
+
+
+      == Flags ==
+
+      $FLAGS_HELP
+
+
+      == Configuration groups ==
+
+      Compose your configuration from those groups (For example, append hydra/job_logging=disabled
+      to command line)
+
+
+      $HYDRA_CONFIG_GROUPS
+
+
+      Use ''--cfg hydra'' to Show the Hydra config.
+
+      '
+    hydra_help: ???
+  hydra_logging:
+    version: 1
+    formatters:
+      simple:
+        format: '[%(asctime)s][HYDRA] %(message)s'
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: simple
+        stream: ext://sys.stdout
+    root:
+      level: INFO
+      handlers:
+      - console
+    loggers:
+      logging_example:
+        level: DEBUG
+    disable_existing_loggers: false
+  job_logging:
+    version: 1
+    formatters:
+      simple:
+        format: '[%(asctime)s][%(name)s][%(levelname)s] - %(message)s'
+    handlers:
+      console:
+        class: logging.StreamHandler
+        formatter: simple
+        stream: ext://sys.stdout
+      file:
+        class: logging.FileHandler
+        formatter: simple
+        filename: ${hydra.runtime.output_dir}/${hydra.job.name}.log
+    root:
+      level: INFO
+      handlers:
+      - console
+      - file
+    disable_existing_loggers: false
+  env: {}
+  mode: RUN
+  searchpath: []
+  callbacks: {}
+  output_subdir: .hydra
+  overrides:
+    hydra:
+    - hydra.run.dir=robot_workspace/data/checkpoints/put_cup_on_plate/mpd/motif/motif_state_gripper_open_smooth_t050
+    - hydra.mode=RUN
+    task:
+    - device=cuda
+    - +fixed_split=True
+    - +train_trajectory_dir=robot_workspace/data/prepared/mpd/put_cup_on_plate/vt_franka_mpd_v1_gripper_open_smooth_t050/train
+    - +val_trajectory_dir=robot_workspace/data/prepared/mpd/put_cup_on_plate/vt_franka_mpd_v1_gripper_open_smooth_t050/val
+    - task_name=put_cup_on_plate
+    - method_name=motif
+    - dataset_config.dt=0.1
+    - performance_metric=val_loss
+    - performance_direction=min
+    - workspace_config._target_=movement_primitive_diffusion.workspaces.dummy_workspace.DummyWorkspace
+    - eval_in_env_after_epochs=0
+    - num_trajectories_in_env=0
+    - swanlab.mode=disabled
+    - swanlab.entity=motif
+    - swanlab.project=baseline-comparison
+    - epochs=500
+    - swanlab.group=motif_state_gripper_open_smooth_t050
+  job:
+    name: train
+    chdir: null
+    override_dirname: +fixed_split=True,+train_trajectory_dir=robot_workspace/data/prepared/mpd/put_cup_on_plate/vt_franka_mpd_v1_gripper_open_smooth_t050/train,+val_trajectory_dir=robot_workspace/data/prepared/mpd/put_cup_on_plate/vt_franka_mpd_v1_gripper_open_smooth_t050/val,dataset_config.dt=0.1,device=cuda,epochs=500,eval_in_env_after_epochs=0,method_name=motif,num_trajectories_in_env=0,performance_direction=min,performance_metric=val_loss,swanlab.entity=motif,swanlab.group=motif_state_gripper_open_smooth_t050,swanlab.mode=disabled,swanlab.project=baseline-comparison,task_name=put_cup_on_plate,workspace_config._target_=movement_primitive_diffusion.workspaces.dummy_workspace.DummyWorkspace
+    id: ???
+    num: ???
+    config_name: experiments/put_cup_on_plate/train_motif_transformer
+    env_set: {}
+    env_copy: []
+    config:
+      override_dirname:
+        kv_sep: '='
+        item_sep: ','
+        exclude_keys: []
+  runtime:
+    version: 1.3.2
+    version_base: '1.3'
+    cwd: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/third_parties/mpd
+    config_sources:
+    - path: hydra.conf
+      schema: pkg
+      provider: hydra
+    - path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/third_parties/mpd/conf
+      schema: file
+      provider: main
+    - path: ''
+      schema: structured
+      provider: schema
+    output_dir: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/third_parties/mpd/robot_workspace/data/checkpoints/put_cup_on_plate/mpd/motif/motif_state_gripper_open_smooth_t050
+    choices:
+      experiments/put_cup_on_plate/motif_handler_config@motif_handler_config: motif_handler
+      experiments/put_cup_on_plate/encoder_config@encoder_config: state_passthrough
+      experiments/put_cup_on_plate/process_batch_config@process_batch_config: motif
+      agent_config: motif_transformer_agent
+      agent_config/noise_scheduler_config: exponential_scheduler
+      agent_config/sampler_config: euler
+      agent_config/sigma_distribution_config: rand_log_logistic
+      agent_config/model_config: motif_diffusion_model
+      agent_config/model_config/scaling_config: trajectory_karras_scaling
+      agent_config/model_config/inner_model_config: motif_transformer
+      experiments/put_cup_on_plate/workspace_config@workspace_config: dummy
+      experiments/put_cup_on_plate/dataset_config@dataset_config: dataset
+      hydra/env: default
+      hydra/callbacks: null
+      hydra/job_logging: default
+      hydra/hydra_logging: default
+      hydra/hydra_help: default
+      hydra/help: default
+      hydra/sweeper: basic
+      hydra/launcher: basic
+      hydra/output: default
+  verbose: false

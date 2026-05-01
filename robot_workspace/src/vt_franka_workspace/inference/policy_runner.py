@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import re
 import socket
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +25,7 @@ from ..runtime.motion import move_to_eef_pose
 from ..runtime.workers import ThreadWorker, start_thread_worker, stop_thread_workers
 from ..sensors.rgb_camera import build_rgb_camera_recorder, resolve_rgb_camera_specs
 from .actions import ActionExecutor, action_to_json, normalize_action_chunk
+from .eval_video import write_rollout_video
 from .observations import ObservationAssembler, ObservationHistory, _json_safe
 
 LOGGER = logging.getLogger(__name__)
@@ -73,11 +76,12 @@ class PolicyRunner:
         self.controller = controller
         self.calibration = calibration
         self.policy = policy
-        self.run_name = run_name or inference.task_name
+        self.policy_family, self.policy_name = self._resolve_policy_group()
+        self.run_name = run_name or datetime.now().strftime("%Y%m%d_%H%M%S")
         self.log_buffer = log_buffer or OperatorLogBuffer(workspace.operator_ui.log_buffer_size)
         self.resume_run = resume_run
 
-        self.sessions = RunSessionManager(workspace.recording.eval_root)
+        self.sessions = RunSessionManager(Path(workspace.recording.eval_root) / self.policy_family / self.policy_name)
         self.quest_publisher = QuestUdpPublisher(
             quest_ip=workspace.quest_feedback.quest_ip,
             robot_state_udp_port=workspace.quest_feedback.robot_state_udp_port,
@@ -94,6 +98,8 @@ class PolicyRunner:
         self.gripper_status = GripperStatusEstimator(workspace.teleop)
         self.action_executor = ActionExecutor(controller)
         self.rgb_camera_buffers: dict[str, LiveSampleBuffer] = {}
+        self.eval_rgb_camera_buffers: dict[str, LiveSampleBuffer] = {}
+        self.eval_camera_stream_names: dict[str, str] = {}
         self.gelsight_marker_buffer: LiveSampleBuffer | None = None
         self.gelsight_frame_buffer: LiveSampleBuffer | None = None
         self.workers: dict[str, ThreadWorker] = {}
@@ -187,19 +193,29 @@ class PolicyRunner:
             )
             self.operator_server.start()
 
+        policy_camera_roles = list(self.inference.modality.rgb_cameras)
+        eval_camera_roles = list(self.inference.eval.cameras) if self.inference.eval.enabled else []
+        requested_camera_roles = list(dict.fromkeys(policy_camera_roles + eval_camera_roles))
         rgb_specs = {spec.role: spec for spec in resolve_rgb_camera_specs(self.inference.rgb_cameras)}
-        for role in self.inference.modality.rgb_cameras:
+        for role in requested_camera_roles:
             if role not in rgb_specs:
-                raise RuntimeError(f"Inference modality requested RGB camera role not configured: {role}")
+                source = "policy modality" if role in policy_camera_roles else "eval recording"
+                raise RuntimeError(f"Inference {source} requested RGB camera role not configured: {role}")
             spec = rgb_specs[role]
             live_buffer = LiveSampleBuffer(spec.stream_name)
-            self.rgb_camera_buffers[role] = live_buffer
+            recorder = None
+            if role in policy_camera_roles:
+                self.rgb_camera_buffers[role] = live_buffer
+            if role in eval_camera_roles:
+                self.eval_rgb_camera_buffers[role] = live_buffer
+                self.eval_camera_stream_names[role] = spec.stream_name
+                recorder = JsonlStreamRecorder(self.sessions, spec.stream_name, record_hz=self.inference.eval.video_hz)
             start_thread_worker(
                 self.workers,
                 f"rgb_camera:{role}",
-                lambda stop_event, spec=spec, live_buffer=live_buffer: build_rgb_camera_recorder(
+                lambda stop_event, spec=spec, live_buffer=live_buffer, recorder=recorder: build_rgb_camera_recorder(
                     spec,
-                    recorder=None,
+                    recorder=recorder,
                     live_buffer=live_buffer,
                     quest_publisher=self.quest_publisher,
                     image_format=self.workspace.recording.image_format,
@@ -303,12 +319,41 @@ class PolicyRunner:
                 settle_dwell_sec=self.inference.initial_pose_settle_dwell_sec,
                 state_max_age_sec=self.inference.modality.controller_state_max_age_sec,
             )
+            self._open_gripper_for_initial_pose_locked()
         except Exception as exc:
             raise OperatorActionError(f"Failed to move robot to initial pose: {exc}") from exc
         self._initial_pose_completed = True
         self._clear_snapshot_locked()
         self.sessions.record_operator_event("initial_pose_requested", {"target_tcp": target_tcp})
         LOGGER.info("Initial pose reached. Ready.")
+
+    def _open_gripper_for_initial_pose_locked(self) -> None:
+        open_width = float(self.workspace.teleop.max_gripper_width)
+        LOGGER.info("Opening gripper for policy initial pose")
+        self.controller.move_gripper(
+            open_width,
+            velocity=self.workspace.teleop.gripper_velocity,
+            force_limit=self.workspace.teleop.grasp_force,
+            source="policy_runner_initial_pose",
+            blocking=True,
+        )
+        self._wait_for_gripper_width_locked(
+            target_width=open_width,
+            tolerance_m=max(float(self.workspace.teleop.gripper_width_vis_precision), 0.002),
+            timeout_sec=5.0,
+        )
+        self.sessions.record_operator_event("initial_gripper_open_requested", {"target_width": open_width})
+
+    def _wait_for_gripper_width_locked(self, *, target_width: float, tolerance_m: float, timeout_sec: float) -> None:
+        deadline = time.monotonic() + max(float(timeout_sec), 0.0)
+        last_width: float | None = None
+        while time.monotonic() <= deadline:
+            state = self.state_monitor.get_state(max_age_sec=self.inference.modality.controller_state_max_age_sec)
+            last_width = float(state.gripper_width)
+            if abs(last_width - target_width) <= tolerance_m:
+                return
+            time.sleep(0.05)
+        raise RuntimeError(f"Initial gripper did not open to {target_width:.4f}m; last width={last_width}")
 
     def _start_episode_locked(self) -> None:
         self._poll_episode_status_locked()
@@ -391,6 +436,8 @@ class PolicyRunner:
             outcome=outcome,
             metadata_updates={"termination_reason": termination_reason},
         )
+        if outcome == "saved":
+            self._write_eval_videos(episode_dir)
         self._latest_saved_episode_dir = episode_dir if outcome == "saved" else self._latest_saved_episode_dir
         self.sessions.record_operator_event(
             "episode_stopped",
@@ -400,6 +447,29 @@ class PolicyRunner:
             LOGGER.warning("Policy episode failed: %s", self._episode_error)
         else:
             LOGGER.info("Policy episode saved: %s (%s)", episode_dir, termination_reason)
+
+    def _write_eval_videos(self, episode_dir: Path) -> None:
+        if not self.inference.eval.enabled:
+            return
+        for role in self.inference.eval.cameras:
+            stream_name = self.eval_camera_stream_names.get(role)
+            if stream_name is None:
+                continue
+            output_name = "rollout.mp4" if len(self.inference.eval.cameras) == 1 else f"rollout_{role}.mp4"
+            try:
+                video_path = write_rollout_video(
+                    episode_dir,
+                    stream_name=stream_name,
+                    output_name=output_name,
+                    fps=self.inference.eval.video_hz,
+                )
+            except Exception as exc:  # pragma: no cover - OpenCV/codec dependent
+                LOGGER.warning("Failed to write eval video for %s: %s", role, exc)
+                continue
+            if video_path is None:
+                LOGGER.warning("No eval frames available for %s in %s", role, episode_dir)
+                continue
+            LOGGER.info("Eval video written: %s", video_path)
 
     def _discard_latest_episode_locked(self) -> None:
         self._poll_episode_status_locked()
@@ -431,13 +501,16 @@ class PolicyRunner:
         assert self._current_episode_dir is not None
         episode_dir = self._current_episode_dir
         recorder = JsonlStreamRecorder(self.sessions, "policy_steps")
+        inference_recorder = JsonlStreamRecorder(self.sessions, "policy_inference")
         history = ObservationHistory(self.inference.obs_horizon)
+        recorded_history = ObservationHistory(self.inference.obs_horizon)
         period = 1.0 / max(self.inference.control_hz, 1e-6)
         start_monotonic = time.monotonic()
         step_index = 0
         try:
             initial_observation, initial_recorded = self.assembler.assemble(episode_dir, step_index)
             history.initialize_with_padding(initial_observation)
+            recorded_history.initialize_with_padding(initial_recorded)
             recorder.record_event(
                 {
                     "step_index": step_index,
@@ -462,9 +535,32 @@ class PolicyRunner:
                 break
             try:
                 inference_start = time.monotonic()
-                raw_actions = self.policy.predict(history.window())
+                observation_window = history.window()
+                recorded_observation_window = recorded_history.window()
+                raw_actions = self.policy.predict(observation_window)
                 inference_duration_sec = time.monotonic() - inference_start
                 action_chunk = normalize_action_chunk(raw_actions)
+                actions_returned_json = [action_to_json(action) for action in action_chunk]
+                inference_recorder.record_event(
+                    {
+                        "step_index": step_index,
+                        "chunk_index": step_index // max(self.inference.exe_horizon, 1),
+                        "policy_wall_time": time.time(),
+                        "policy_monotonic_time": loop_start,
+                        "episode_elapsed_sec": elapsed,
+                        "obs_horizon": self.inference.obs_horizon,
+                        "exe_horizon": self.inference.exe_horizon,
+                        "prediction_horizon": len(action_chunk),
+                        "raw_observation_window": _json_safe(recorded_observation_window),
+                        "raw_policy_output": _json_safe(raw_actions),
+                        "actions_returned": actions_returned_json,
+                        "raw_action_vectors_10d": _extract_raw_action_vectors(actions_returned_json),
+                        "timing": {
+                            "inference_duration_sec": inference_duration_sec,
+                        },
+                    },
+                    event_time=time.time(),
+                )
                 actions_to_execute = action_chunk[: self.inference.exe_horizon]
                 executed_actions = []
                 observations_after_actions = []
@@ -477,6 +573,7 @@ class PolicyRunner:
                     precise_sleep(period)
                     observation, recorded_observation = self.assembler.assemble(episode_dir, step_index)
                     history.append(observation)
+                    recorded_history.append(recorded_observation)
                     observations_after_actions.append(
                         {
                             "step_index": step_index,
@@ -488,7 +585,8 @@ class PolicyRunner:
                     if action.terminate:
                         self._policy_terminated = True
                         break
-                self.policy.observe_executed_actions([action_to_json(action) for action in executed_actions])
+                executed_actions_json = [action_to_json(action) for action in executed_actions]
+                self.policy.observe_executed_actions(executed_actions_json)
                 recorder.record_event(
                     {
                         "step_index": first_observation_step_index,
@@ -497,8 +595,8 @@ class PolicyRunner:
                         "policy_monotonic_time": loop_start,
                         "episode_elapsed_sec": elapsed,
                         "observations_after_actions": observations_after_actions,
-                        "actions_returned": [action_to_json(action) for action in action_chunk],
-                        "actions_executed": [action_to_json(action) for action in executed_actions],
+                        "actions_returned": actions_returned_json,
+                        "actions_executed": executed_actions_json,
                         "timing": {
                             "inference_duration_sec": inference_duration_sec,
                             "loop_duration_sec": time.monotonic() - loop_start,
@@ -534,6 +632,17 @@ class PolicyRunner:
             metadata["checkpoint_path"] = str(checkpoint_path)
         return metadata
 
+    def _resolve_policy_group(self) -> tuple[str, str]:
+        settings = getattr(self.policy, "settings", None)
+        policy_type = self.policy.__class__.__name__.replace("Policy", "") or "policy"
+        family = getattr(settings, "family", None) if settings is not None else None
+        policy_name = getattr(settings, "policy_name", None) if settings is not None else None
+        algorithm = getattr(settings, "algorithm", None) if settings is not None else None
+        if self.policy.__class__.__module__.endswith(".mpd.policy"):
+            family = "mpd"
+            policy_name = policy_name or algorithm
+        return _slugify_path_part(family or policy_type), _slugify_path_part(policy_name or policy_type)
+
     def _build_status_locked(self) -> dict:
         ready, reasons = self._is_ready_for_episode_locked()
         self._update_frozen_snapshot_locked(ready=ready)
@@ -542,6 +651,8 @@ class PolicyRunner:
         return {
             "mode": "run_policy",
             "run_name": self.run_name,
+            "policy_family": self.policy_family,
+            "policy_name": self.policy_name,
             "run_dir": None if run_dir is None else str(run_dir),
             "ready": ready,
             "reasons": reasons,
@@ -555,6 +666,7 @@ class PolicyRunner:
             "teleop_enabled": None,
             "controller_state": self.state_monitor.snapshot(),
             "rgb_cameras": {role: buffer.snapshot() for role, buffer in self.rgb_camera_buffers.items()},
+            "eval_rgb_cameras": {role: buffer.snapshot() for role, buffer in self.eval_rgb_camera_buffers.items()},
             "gelsight_markers": None if self.gelsight_marker_buffer is None else self.gelsight_marker_buffer.snapshot(),
             "gelsight_frame": None if self.gelsight_frame_buffer is None else self.gelsight_frame_buffer.snapshot(),
             "workers": {
@@ -575,7 +687,7 @@ class PolicyRunner:
 
     def _snapshot_metadata_locked(self) -> dict[str, dict[str, object]]:
         metadata: dict[str, dict[str, object]] = {}
-        for role in self.rgb_camera_buffers:
+        for role in dict.fromkeys([*self.rgb_camera_buffers, *self.eval_rgb_camera_buffers]):
             snapshot = self._frozen_rgb_snapshots.get(role)
             if snapshot is None:
                 metadata[role] = {"available": False}
@@ -592,10 +704,11 @@ class PolicyRunner:
         self._frozen_rgb_snapshots.clear()
 
     def _update_frozen_snapshot_locked(self, *, ready: bool) -> None:
-        if self._current_episode_dir is not None or not ready or not self.rgb_camera_buffers:
+        snapshot_buffers = self.rgb_camera_buffers or self.eval_rgb_camera_buffers
+        if self._current_episode_dir is not None or not ready or not snapshot_buffers:
             self._clear_snapshot_locked()
             return
-        for role, buffer in self.rgb_camera_buffers.items():
+        for role, buffer in snapshot_buffers.items():
             if role in self._frozen_rgb_snapshots:
                 continue
             sample = buffer.get_latest_optional(max_age_sec=self.workspace.operator_ui.snapshot_max_age_sec)
@@ -624,6 +737,7 @@ class PolicyRunner:
             f"recording={status['active_episode_name'] or 'off'} "
             f"controller_age={status['controller_state']['age_sec'] if status['controller_state']['age_sec'] is not None else 'n/a'} "
             f"rgb_cameras={len(self.rgb_camera_buffers)} "
+            f"eval_cameras={len(self.eval_rgb_camera_buffers)} "
             f"gelsight={'on' if self.gelsight_marker_buffer is not None or self.gelsight_frame_buffer is not None else 'off'}"
         )
         if status["reasons"]:
@@ -634,6 +748,7 @@ class PolicyRunner:
         print(f"Policy Runner run started: {run_dir}", flush=True)
         print(f"Task: {self.inference.task_name}", flush=True)
         print(f"Policy: {self.policy.__class__.__module__}.{self.policy.__class__.__name__}", flush=True)
+        print(f"Eval group: {self.policy_family}/{self.policy_name}/{self.run_name}", flush=True)
         print("Checklist:", flush=True)
         print("- Controller PC: vt-franka-controller is already running", flush=True)
         print("- Required policy inputs are producing fresh samples", flush=True)
@@ -661,3 +776,21 @@ class PolicyRunner:
 
 def _jsonable(value: Any) -> Any:
     return _json_safe(value)
+
+
+def _extract_raw_action_vectors(actions: list[dict[str, Any]]) -> list[list[float] | None]:
+    vectors: list[list[float] | None] = []
+    for action in actions:
+        metadata = action.get("metadata") or {}
+        state = metadata.get("mpd_tcp_state")
+        if isinstance(state, list) and len(state) == 10:
+            vectors.append([float(value) for value in state])
+        else:
+            vectors.append(None)
+    return vectors
+
+
+def _slugify_path_part(value: Any) -> str:
+    text = str(value).strip().lower()
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    return text.strip("_") or "policy"

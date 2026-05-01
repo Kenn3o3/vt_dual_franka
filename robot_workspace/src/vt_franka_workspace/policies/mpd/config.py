@@ -14,6 +14,8 @@ PolicyFamily = Literal["chunk", "prodmp", "motif"]
 DEFAULT_DATASET_NAME = "vt_franka_mpd_v1"
 DEFAULT_UPSTREAM_REPO = Path("/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/third_parties/mpd")
 DEFAULT_VECTOR_DIM = 10
+ACTION_CONVENTION_CLOSEDNESS = "tcp_xyz_rot6d_gripper_closedness"
+ACTION_CONVENTION_OPEN_FRACTION = "tcp_xyz_rot6d_gripper_open_fraction"
 
 
 @dataclass(frozen=True)

@@ -101,17 +101,20 @@ def build_train_config_from_workspace(
 def build_train_command(config: MPDTrainConfig) -> list[str]:
     spec = get_policy_spec(config.algorithm)
     experiment = config.upstream_experiment or config.task_name
-    manifest = _load_manifest(config.prepared_dataset_dir)
+    prepared_dataset_dir = Path(config.prepared_dataset_dir).expanduser().resolve()
+    checkpoint_dir = Path(config.checkpoint_dir).expanduser().resolve()
+    upstream_repo_dir = Path(config.upstream_repo_dir).expanduser().resolve()
+    manifest = _load_manifest(prepared_dataset_dir)
     dt = float(manifest.get("dt", 0.1))
     command = [
         config.python,
-        str(Path(config.upstream_repo_dir) / "scripts" / "train.py"),
+        str(upstream_repo_dir / "scripts" / "train.py"),
         f"--config-name={spec.upstream_config_name(experiment)}",
         f"device={config.device}",
         "+fixed_split=True",
-        f"+train_trajectory_dir={config.prepared_dataset_dir / 'train'}",
-        f"+val_trajectory_dir={config.prepared_dataset_dir / 'val'}",
-        f"hydra.run.dir={config.checkpoint_dir}",
+        f"+train_trajectory_dir={prepared_dataset_dir / 'train'}",
+        f"+val_trajectory_dir={prepared_dataset_dir / 'val'}",
+        f"hydra.run.dir={checkpoint_dir}",
         f"task_name={config.task_name}",
         f"method_name={spec.method_names[0]}",
         f"dataset_config.dt={dt}",
@@ -159,7 +162,7 @@ def run_training(config: MPDTrainConfig) -> int:
     if existing_pythonpath:
         python_paths.append(existing_pythonpath)
     env["PYTHONPATH"] = os.pathsep.join(python_paths)
-    return subprocess.run(command, cwd=config.upstream_repo_dir, env=env, check=False).returncode
+    return subprocess.run(command, cwd=upstream_dir, env=env, check=False).returncode
 
 
 def main() -> None:

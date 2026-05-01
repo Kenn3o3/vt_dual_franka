@@ -1,5 +1,5 @@
 obs_horizon: 3
-exe_horizon: 8
+exe_horizon: 12
 control_hz: 10.0
 max_duration_sec: 30.0
 start_countdown_sec: 2.0
@@ -17,6 +17,37 @@ modality:
   rgb_camera_max_age_sec: 2.0
   gelsight_max_age_sec: 2.0
 
-rgb_cameras: {}
+eval:
+  enabled: true
+  cameras: [third]
+  video_hz: 10.0
+
+rgb_cameras:
+  wrist:
+    enabled: true
+    backend: orbbec
+    stream_name: rgb_wrist
+    camera_name: wrist_orbbec_rgb
+    serial_number: CP0E753000KA
+    color_width: 640
+    color_height: 0
+    color_format: RGB
+    color_fps: 30
+    frame_timeout_ms: 200
+    save_frames: true
+    record_hz: 15.0
+  third_person:
+    enabled: true
+    backend: orbbec
+    stream_name: rgb_third_person
+    camera_name: third_person_orbbec_rgb
+    serial_number: CP0HC530002T
+    color_width: 640
+    color_height: 0
+    color_format: RGB
+    color_fps: 30
+    frame_timeout_ms: 200
+    save_frames: true
+    record_hz: 15.0
 gelsight:
   enabled: false

@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 
 from vt_franka_shared.models import ControllerState
-from vt_franka_workspace.config import InferenceRuntimeSettings, ModalitySettings, WorkspaceSettings
+from vt_franka_workspace.config import InferenceRuntimeSettings, ModalitySettings, RgbCameraSettings, WorkspaceSettings
 from vt_franka_workspace.inference import ObservationAssembler, ObservationHistory, PolicyRunner
 from vt_franka_workspace.inference.actions import ActionExecutor
 from vt_franka_workspace.inference.policy_runner import GripperStatusEstimator
@@ -36,11 +36,13 @@ class FakeController:
         self.tcp_targets.append((list(target_tcp), source, target_duration_sec))
         self.state = self.state.model_copy(update={"tcp_pose": list(target_tcp)})
 
-    def move_gripper(self, width, velocity, force_limit, source="policy_runner"):
-        self.gripper_moves.append((width, velocity, force_limit, source))
+    def move_gripper(self, width, velocity, force_limit, source="policy_runner", blocking=False):
+        self.gripper_moves.append((width, velocity, force_limit, source, blocking))
+        self.state = self.state.model_copy(update={"gripper_width": float(width), "gripper_force": 0.0})
 
-    def grasp_gripper(self, velocity, force_limit, source="policy_runner"):
-        self.gripper_grasps.append((velocity, force_limit, source))
+    def grasp_gripper(self, velocity, force_limit, source="policy_runner", blocking=False):
+        self.gripper_grasps.append((velocity, force_limit, source, blocking))
+        self.state = self.state.model_copy(update={"gripper_width": 0.0, "gripper_force": float(force_limit)})
 
 
 class FakeStateMonitor:
@@ -136,6 +138,7 @@ def test_policy_runner_executes_only_exe_horizon_and_records(tmp_path: Path):
         start_countdown_sec=0.0,
         initial_eef_pose_xyz_rpy_deg=None,
         modality=ModalitySettings(proprioception=True),
+        eval={"enabled": False},
     )
     controller = FakeController()
     policy = TwoStepThenTerminatePolicy()
@@ -179,8 +182,105 @@ def test_policy_runner_executes_only_exe_horizon_and_records(tmp_path: Path):
         item["observation"]["proprioception"]["controller_state"]["tcp_pose"][0]
         for item in first_chunk["observations_after_actions"]
     ] == [policy.target_1[0], policy.target_2[0]]
+    inference_events = [
+        json.loads(line)
+        for line in (episode_dir / "streams" / "policy_inference.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    ]
+    first_inference = inference_events[0]
+    assert len(first_inference["raw_observation_window"]) == 2
+    assert len(first_inference["raw_policy_output"]) == 3
+    assert len(first_inference["actions_returned"]) == 3
+    assert first_inference["raw_action_vectors_10d"] == [None, None, None]
     manifest = json.loads((episode_dir / "episode_manifest.json").read_text(encoding="utf-8"))
     assert manifest["metadata"]["termination_reason"] == "policy_terminate"
+
+
+def test_policy_runner_groups_eval_runs_by_policy(tmp_path: Path):
+    workspace = WorkspaceSettings(
+        recording={"eval_root": tmp_path / "eval", "collect_root": tmp_path / "collect", "image_format": "jpg"},
+        operator_ui={"enabled": False},
+    )
+    inference = InferenceRuntimeSettings(task_name="put_cup_on_plate", eval={"enabled": False})
+
+    runner = PolicyRunner(workspace, inference, FakeController(), calibration=None, policy=TwoStepThenTerminatePolicy())
+
+    assert runner.sessions.root_dir == tmp_path / "eval" / "twostepthenterminate" / "twostepthenterminate"
+    assert runner.run_name.count("_") == 1
+
+
+def test_policy_runner_reset_initial_pose_opens_gripper(tmp_path: Path):
+    workspace = WorkspaceSettings(
+        recording={"eval_root": tmp_path / "eval", "collect_root": tmp_path / "collect", "image_format": "jpg"},
+        operator_ui={"enabled": False},
+    )
+    inference = InferenceRuntimeSettings(
+        task_name="policy_test",
+        initial_eef_pose_xyz_rpy_deg=[0.4, 0.0, 0.3, 180.0, 0.0, 0.0],
+        initial_move_duration_sec=0.01,
+        initial_pose_settle_timeout_sec=0.2,
+        initial_pose_settle_dwell_sec=0.0,
+        eval={"enabled": False},
+    )
+    controller = FakeController()
+    controller.state = controller.state.model_copy(update={"gripper_width": 0.0, "gripper_force": 7.0})
+    runner = PolicyRunner(workspace, inference, controller, calibration=None, policy=TwoStepThenTerminatePolicy())
+    runner.sessions = RunSessionManager(tmp_path / "eval")
+    runner.sessions.start_run("policy_test")
+    runner.state_monitor = FakeStateMonitor(controller)
+
+    runner.operator_reset_ready_pose()
+
+    assert runner._initial_pose_completed is True
+    assert controller.gripper_moves[-1] == (
+        workspace.teleop.max_gripper_width,
+        workspace.teleop.gripper_velocity,
+        workspace.teleop.grasp_force,
+        "policy_runner_initial_pose",
+        True,
+    )
+    assert controller.state.gripper_width == workspace.teleop.max_gripper_width
+
+
+def test_policy_runner_starts_eval_camera_without_policy_camera(monkeypatch, tmp_path: Path):
+    workspace = WorkspaceSettings(
+        recording={"eval_root": tmp_path / "eval", "collect_root": tmp_path / "collect", "image_format": "jpg"},
+        operator_ui={"enabled": False},
+    )
+    inference = InferenceRuntimeSettings(
+        modality=ModalitySettings(proprioception=True, rgb_cameras=[]),
+        eval={"enabled": True, "cameras": ["third"], "video_hz": 10.0},
+        rgb_cameras={"third_person": RgbCameraSettings(stream_name="rgb_third_person")},
+    )
+    runner = PolicyRunner(workspace, inference, FakeController(), calibration=None, policy=TwoStepThenTerminatePolicy())
+    runner.state_monitor = FakeStateMonitor(FakeController())
+    started = {}
+
+    class FakeRecorder:
+        def __init__(self, spec, recorder, live_buffer, quest_publisher, image_format):
+            started["role"] = spec.role
+            started["stream_name"] = spec.stream_name
+            started["recorder"] = recorder
+            started["live_buffer"] = live_buffer
+
+        def run(self, stop_event=None):
+            del stop_event
+
+    def fake_start_worker(workers, name, target, required, startup_delay_sec=0.2):
+        del startup_delay_sec
+        target(None)
+        workers[name] = type("FakeWorker", (), {"required": required, "error": None, "is_alive": lambda self: False})()
+
+    monkeypatch.setattr("vt_franka_workspace.inference.policy_runner.build_rgb_camera_recorder", FakeRecorder)
+    monkeypatch.setattr("vt_franka_workspace.inference.policy_runner.start_thread_worker", fake_start_worker)
+
+    runner._start_workers()
+
+    assert runner.rgb_camera_buffers == {}
+    assert list(runner.eval_rgb_camera_buffers) == ["third_person"]
+    assert runner.eval_camera_stream_names == {"third_person": "rgb_third_person"}
+    assert started["role"] == "third_person"
+    assert started["recorder"].stream_name == "rgb_third_person"
+    assert started["recorder"].record_hz == 10.0
 
 
 def test_action_executor_sends_gripper_state_changes_immediately():
@@ -197,6 +297,8 @@ def test_action_executor_sends_gripper_state_changes_immediately():
 
     executor.execute(Action(gripper_width=0.078))
     assert len(controller.gripper_moves) == 1
+    assert controller.gripper_grasps[0][3] is True
+    assert controller.gripper_moves[0][4] is True
 
 
 def test_gripper_status_estimator_derives_stability():

@@ -38,6 +38,7 @@ class GripperWidthCommand(BaseModel):
     width: float
     velocity: float = 0.1
     force_limit: float = 5.0
+    blocking: bool = False
     issued_at_wall_time: float = Field(default_factory=time.time)
     issued_at_monotonic_time: float = Field(default_factory=time.monotonic)
     source: str = "unknown"
@@ -46,6 +47,7 @@ class GripperWidthCommand(BaseModel):
 class GripperGraspCommand(BaseModel):
     velocity: float = 0.1
     force_limit: float = 5.0
+    blocking: bool = False
     issued_at_wall_time: float = Field(default_factory=time.time)
     issued_at_monotonic_time: float = Field(default_factory=time.monotonic)
     source: str = "unknown"

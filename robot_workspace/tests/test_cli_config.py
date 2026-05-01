@@ -29,6 +29,11 @@ def test_task_and_inference_configs_load_clean_modalities():
     assert task.modality.rgb_cameras == ["wrist", "third_person"]
     assert inference.obs_horizon == 2
     assert inference.exe_horizon == 8
+    assert inference.eval.enabled is True
+    assert inference.eval.cameras == ["third_person"]
+    assert inference.eval.video_hz == 10.0
+    assert inference.modality.rgb_cameras == []
+    assert "third_person" in inference.rgb_cameras
     assert policy.type == "replay"
 
 

@@ -10,6 +10,7 @@ import pytest
 from vt_franka_workspace.config import InferenceRuntimeSettings, PolicyConfig, WorkspaceSettings
 from vt_franka_workspace.policies import resolve_policy
 from vt_franka_workspace.policies.mpd.config import (
+    ACTION_CONVENTION_OPEN_FRACTION,
     checkpoint_run_dir,
     default_checkpoint_path,
     get_policy_spec,
@@ -18,11 +19,16 @@ from vt_franka_workspace.policies.mpd.config import (
 from vt_franka_workspace.policies.mpd.data import PrepareMPDDatasetConfig, prepare_mpd_dataset
 from vt_franka_workspace.policies.mpd.math import pose7d_and_gripper_to_tcp_state, tcp_state_to_pose7d_and_gripper
 from vt_franka_workspace.policies.mpd.policy import MPDPolicy, MPDRuntimeSpec
+from vt_franka_workspace.policies.mpd.smooth_gripper_dataset import (
+    SmoothGripperDatasetConfig,
+    build_transition_ramp,
+    smooth_gripper_dataset,
+)
 from vt_franka_workspace.policies.mpd.train import build_train_command, build_train_config_from_workspace
 
 
 class FakeMPDBackend:
-    def __init__(self, required_history_keys=("action", "action_vel")):
+    def __init__(self, required_history_keys=("action", "action_vel"), action_convention="tcp_xyz_rot6d_gripper_closedness"):
         self.runtime_spec = MPDRuntimeSpec(
             obs_horizon=3,
             prediction_horizon=2,
@@ -31,6 +37,7 @@ class FakeMPDBackend:
             required_history_keys=tuple(required_history_keys),
             dt=0.1,
         )
+        self.action_convention = action_convention
         self.inputs: list[dict[str, np.ndarray]] = []
 
     def predict_action_chunk(self, inputs):
@@ -113,6 +120,54 @@ def test_mpd_policy_records_executed_actions_for_next_prediction():
     assert np.allclose(pose[:3], [0.4, 0.2, 0.3])
 
 
+def test_mpd_policy_uses_temporary_gripper_hysteresis():
+    workspace = WorkspaceSettings()
+    inference = InferenceRuntimeSettings(obs_horizon=3, exe_horizon=2, control_hz=10.0)
+    policy_config = PolicyConfig(type="mpd", config={"algorithm": "fm", "task_name": "put_cup_on_plate"})
+    settings, checkpoint = policy_config_to_settings(policy_config, workspace, inference)
+    policy = MPDPolicy(settings, checkpoint, inference, workspace, backend=FakeMPDBackend(required_history_keys=()))
+
+    assert policy._gripper_mode_from_closedness(0.2) == "open"
+    assert policy._gripper_mode_from_closedness(0.6) == "close"
+    assert policy._gripper_mode_from_closedness(0.4) == "close"
+    assert policy._gripper_mode_from_closedness(0.2) == "open"
+
+
+def test_mpd_policy_supports_open_fraction_gripper_convention():
+    workspace = WorkspaceSettings()
+    inference = InferenceRuntimeSettings(obs_horizon=3, exe_horizon=2, control_hz=10.0)
+    policy_config = PolicyConfig(type="mpd", config={"algorithm": "motif", "task_name": "put_cup_on_plate"})
+    settings, checkpoint = policy_config_to_settings(policy_config, workspace, inference)
+    policy = MPDPolicy(
+        settings,
+        checkpoint,
+        inference,
+        workspace,
+        backend=FakeMPDBackend(required_history_keys=(), action_convention=ACTION_CONVENTION_OPEN_FRACTION),
+    )
+
+    open_state = policy._state_from_observation(_observation([0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0]))
+    closed_state = policy._state_from_observation(
+        {
+            "proprioception": {
+                "controller_state": {
+                    "tcp_pose": [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0],
+                    "gripper_width": 0.0,
+                }
+            },
+            "images": {},
+            "tactile": {},
+        }
+    )
+
+    assert open_state[9] == pytest.approx(1.0)
+    assert closed_state[9] == pytest.approx(0.0)
+    assert policy._row_to_action(np.r_[open_state[:9], 1.0])["gripper_width"] == pytest.approx(0.078)
+    assert policy._row_to_action(np.r_[open_state[:9], 0.5])["gripper_closed"] is True
+    assert policy._row_to_action(np.r_[open_state[:9], 0.0])["gripper_closed"] is True
+    assert policy._row_to_action(np.r_[open_state[:9], 0.5])["gripper_width"] == pytest.approx(0.078)
+
+
 def test_prepare_mpd_dataset_from_raw_streams(tmp_path: Path):
     raw_run = tmp_path / "collect" / "put_cup_on_plate"
     for episode_index in range(2):
@@ -166,6 +221,67 @@ def test_prepare_mpd_dataset_from_raw_streams(tmp_path: Path):
     assert manifest["action_alignment"] == "causal_future_command"
 
 
+def test_build_transition_ramp_sets_switch_threshold_at_transition():
+    smoothed = build_transition_ramp(
+        np.asarray([1, 1, 1, 0, 0, 0, 0], dtype=np.float64),
+        switch_threshold=0.5,
+        pre_switch_ramp_steps=2,
+        post_switch_ramp_steps=2,
+    )
+
+    assert smoothed.tolist() == pytest.approx([1.0, 5.0 / 6.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 1.0 / 6.0, 0.0])
+
+
+def test_smooth_gripper_dataset_writes_open_fraction_variant(tmp_path: Path):
+    source = tmp_path / "prepared" / "mpd" / "put_cup_on_plate" / "vt_franka_mpd_v1"
+    for split_name in ("train", "val"):
+        demo_dir = source / split_name / "demo_000"
+        demo_dir.mkdir(parents=True)
+        values = np.zeros((7, 10), dtype=np.float32)
+        values[:, 3] = 1.0
+        values[:, 9] = np.asarray([0, 0, 0, 1, 1, 1, 1], dtype=np.float32)
+        np.savez_compressed(demo_dir / "agent_pos.npz", values)
+        np.savez_compressed(demo_dir / "agent_vel.npz", values * 0.0)
+        np.savez_compressed(demo_dir / "action.npz", values)
+        np.savez_compressed(demo_dir / "action_vel.npz", values * 0.0)
+        np.savez_compressed(demo_dir / "timestamps.npz", np.arange(7, dtype=np.float64) * 0.1)
+        (demo_dir / "dataset_manifest.json").write_text(json.dumps({"num_steps": 7}), encoding="utf-8")
+    (source / "dataset_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "vt_franka_mpd_v1",
+                "dt": 0.1,
+                "target_hz": 10.0,
+                "action_convention": "tcp_xyz_rot6d_gripper_closedness",
+            }
+        ),
+        encoding="utf-8",
+    )
+    np.savez_compressed(source / "scaler_values.npz", action_min=np.zeros(10, dtype=np.float32))
+
+    output = tmp_path / "prepared" / "mpd" / "put_cup_on_plate" / "smooth"
+    result = smooth_gripper_dataset(
+        SmoothGripperDatasetConfig(
+            source_dataset_dir=source,
+            output_dataset_dir=output,
+            pre_switch_ramp_steps=2,
+            post_switch_ramp_steps=2,
+            plot_first_demo=False,
+        )
+    )
+
+    action = np.load(output / "train" / "demo_000" / "action.npz")["arr_0"]
+    agent_pos = np.load(output / "train" / "demo_000" / "agent_pos.npz")["arr_0"]
+    action_vel = np.load(output / "train" / "demo_000" / "action_vel.npz")["arr_0"]
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["action_convention"] == ACTION_CONVENTION_OPEN_FRACTION
+    assert action[:, 9].tolist() == pytest.approx([1.0, 5.0 / 6.0, 2.0 / 3.0, 0.5, 1.0 / 3.0, 1.0 / 6.0, 0.0])
+    assert agent_pos[:, 9].tolist() == pytest.approx([1, 1, 1, 0, 0, 0, 0])
+    assert action_vel[3, 9] == pytest.approx((0.5 - 2.0 / 3.0) / 0.1)
+    assert (output / "scaler_values.npz").exists()
+
+
 def test_train_command_uses_checkpoint_root_and_disables_sim_eval(tmp_path: Path):
     workspace = WorkspaceSettings(
         recording={
@@ -189,7 +305,9 @@ def test_train_command_uses_checkpoint_root_and_disables_sim_eval(tmp_path: Path
 
     assert "workspace_config._target_=movement_primitive_diffusion.workspaces.dummy_workspace.DummyWorkspace" in command
     assert "eval_in_env_after_epochs=0" in command
-    assert f"hydra.run.dir={tmp_path / 'checkpoints' / 'put_cup_on_plate' / 'mpd' / 'dp' / 'dp_state'}" in command
+    assert f"+train_trajectory_dir={(prepared / 'train').resolve()}" in command
+    assert f"+val_trajectory_dir={(prepared / 'val').resolve()}" in command
+    assert f"hydra.run.dir={(tmp_path / 'checkpoints' / 'put_cup_on_plate' / 'mpd' / 'dp' / 'dp_state').resolve()}" in command
 
 
 def test_registry_resolves_mpd_policy(monkeypatch):

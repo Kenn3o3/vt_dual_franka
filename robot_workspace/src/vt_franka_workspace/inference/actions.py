@@ -34,10 +34,23 @@ class ActionController(Protocol):
     def queue_tcp(self, target_tcp: list[float], source: str = "workspace", target_duration_sec: float | None = None) -> None:
         ...
 
-    def move_gripper(self, width: float, velocity: float, force_limit: float, source: str = "workspace") -> None:
+    def move_gripper(
+        self,
+        width: float,
+        velocity: float,
+        force_limit: float,
+        source: str = "workspace",
+        blocking: bool = False,
+    ) -> None:
         ...
 
-    def grasp_gripper(self, velocity: float, force_limit: float, source: str = "workspace") -> None:
+    def grasp_gripper(
+        self,
+        velocity: float,
+        force_limit: float,
+        source: str = "workspace",
+        blocking: bool = False,
+    ) -> None:
         ...
 
 
@@ -52,8 +65,9 @@ def normalize_action_chunk(raw_actions: Any) -> list[Action]:
 
 
 class ActionExecutor:
-    def __init__(self, controller: ActionController) -> None:
+    def __init__(self, controller: ActionController, *, blocking_gripper: bool = True) -> None:
         self.controller = controller
+        self.blocking_gripper = blocking_gripper
         self._last_gripper_closed: bool | None = None
         self._last_gripper_width: float | None = None
 
@@ -73,6 +87,7 @@ class ActionExecutor:
                 velocity=action.gripper_velocity,
                 force_limit=action.gripper_force_limit,
                 source=source,
+                blocking=self.blocking_gripper,
             )
             self._last_gripper_closed = True
             self._last_gripper_width = None
@@ -85,6 +100,7 @@ class ActionExecutor:
                 velocity=action.gripper_velocity,
                 force_limit=action.gripper_force_limit,
                 source=source,
+                blocking=self.blocking_gripper,
             )
             self._last_gripper_closed = False
             self._last_gripper_width = width

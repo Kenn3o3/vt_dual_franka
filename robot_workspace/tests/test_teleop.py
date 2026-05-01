@@ -20,10 +20,12 @@ class FakeController:
         del source, target_duration_sec
         self.tcp_targets.append(target_tcp)
 
-    def move_gripper(self, width, velocity, force_limit, source="test"):
+    def move_gripper(self, width, velocity, force_limit, source="test", blocking=False):
+        del blocking
         return None
 
-    def grasp_gripper(self, velocity, force_limit, source="test"):
+    def grasp_gripper(self, velocity, force_limit, source="test", blocking=False):
+        del blocking
         return None
 
     def stop_gripper(self):

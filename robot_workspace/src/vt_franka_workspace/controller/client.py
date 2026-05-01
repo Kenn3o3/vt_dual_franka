@@ -30,13 +30,34 @@ class ControllerClient:
         command = TcpTargetCommand(target_tcp=target_tcp, target_duration_sec=target_duration_sec, source=source)
         self._post_json("/api/v1/commands/tcp", command.model_dump(mode="json"))
 
-    def move_gripper(self, width: float, velocity: float, force_limit: float, source: str = "workspace") -> None:
-        command = GripperWidthCommand(width=width, velocity=velocity, force_limit=force_limit, source=source)
-        self._post_json("/api/v1/commands/gripper/width", command.model_dump(mode="json"))
+    def move_gripper(
+        self,
+        width: float,
+        velocity: float,
+        force_limit: float,
+        source: str = "workspace",
+        blocking: bool = False,
+    ) -> None:
+        command = GripperWidthCommand(
+            width=width,
+            velocity=velocity,
+            force_limit=force_limit,
+            source=source,
+            blocking=blocking,
+        )
+        timeout_sec = max(self.request_timeout_sec, 10.0) if blocking else None
+        self._post_json("/api/v1/commands/gripper/width", command.model_dump(mode="json"), timeout_sec=timeout_sec)
 
-    def grasp_gripper(self, velocity: float, force_limit: float, source: str = "workspace") -> None:
-        command = GripperGraspCommand(velocity=velocity, force_limit=force_limit, source=source)
-        self._post_json("/api/v1/commands/gripper/grasp", command.model_dump(mode="json"))
+    def grasp_gripper(
+        self,
+        velocity: float,
+        force_limit: float,
+        source: str = "workspace",
+        blocking: bool = False,
+    ) -> None:
+        command = GripperGraspCommand(velocity=velocity, force_limit=force_limit, source=source, blocking=blocking)
+        timeout_sec = max(self.request_timeout_sec, 10.0) if blocking else None
+        self._post_json("/api/v1/commands/gripper/grasp", command.model_dump(mode="json"), timeout_sec=timeout_sec)
 
     def stop_gripper(self) -> None:
         self._post_json("/stop_gripper/left", {})

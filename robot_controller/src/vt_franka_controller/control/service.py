@@ -72,6 +72,11 @@ class ControllerService:
     def queue_gripper_width_command(self, command: GripperWidthCommand) -> None:
         self._assert_accepting_commands()
 
+        if command.blocking:
+            with self._gripper_lock:
+                self.backend.move_gripper(command.width, command.velocity, command.force_limit)
+            return
+
         def move() -> None:
             with self._gripper_lock:
                 self.backend.move_gripper(command.width, command.velocity, command.force_limit)
@@ -80,6 +85,11 @@ class ControllerService:
 
     def queue_gripper_grasp_command(self, command: GripperGraspCommand) -> None:
         self._assert_accepting_commands()
+
+        if command.blocking:
+            with self._gripper_lock:
+                self.backend.grasp(command.velocity, command.force_limit)
+            return
 
         def grasp() -> None:
             with self._gripper_lock:

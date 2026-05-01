@@ -97,6 +97,33 @@ def test_mock_controller_api_accepts_explicit_waypoint_duration():
         assert response.status_code == 200
 
 
+def test_mock_controller_api_can_block_on_gripper_command():
+    settings = ControllerSettings(
+        server=ServerSettings(host="127.0.0.1", port=18092),
+        backend=BackendSettings(kind="mock"),
+        control=ControlSettings(control_frequency_hz=50.0, teleop_command_hz=60.0),
+    )
+    service = ControllerService(settings, MockFrankaBackend())
+    app = create_app(service)
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/commands/gripper/width",
+            json={
+                "width": 0.078,
+                "velocity": 0.1,
+                "force_limit": 7.0,
+                "blocking": True,
+                "source": "test",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "completed"
+        state = client.get("/api/v1/state")
+        assert state.json()["gripper_width"] == 0.078
+
+
 def test_mock_controller_api_rejects_streaming_commands_during_reset():
     class BlockingResetBackend(MockFrankaBackend):
         def go_home(self, ee_pose, duration_sec):

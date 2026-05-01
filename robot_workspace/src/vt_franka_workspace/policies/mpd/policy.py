@@ -11,7 +11,12 @@ import numpy as np
 
 from ...config import InferenceRuntimeSettings, PolicyConfig, WorkspaceSettings
 from ..base import Policy
-from .config import MPDPolicySettings, get_policy_spec
+from .config import (
+    ACTION_CONVENTION_CLOSEDNESS,
+    ACTION_CONVENTION_OPEN_FRACTION,
+    MPDPolicySettings,
+    get_policy_spec,
+)
 from .math import (
     gripper_width_to_closedness,
     pose7d_and_gripper_to_tcp_state,
@@ -31,6 +36,7 @@ class MPDRuntimeSpec:
 
 class MPDBackend(Protocol):
     runtime_spec: MPDRuntimeSpec
+    action_convention: str
 
     def predict_action_chunk(self, inputs: dict[str, np.ndarray]) -> np.ndarray:
         ...
@@ -60,8 +66,11 @@ class MPDPolicy(Policy):
             else float(workspace.teleop.max_gripper_width)
         )
         self.target_duration_sec = settings.target_duration_sec or (1.0 / max(inference_config.control_hz, 1e-8))
+        self.action_convention = getattr(self.backend, "action_convention", ACTION_CONVENTION_CLOSEDNESS)
+        self._uses_gripper_open_fraction = self.action_convention == ACTION_CONVENTION_OPEN_FRACTION
         self._executed_action_history: deque[np.ndarray] = deque(maxlen=max(self.backend.runtime_spec.obs_horizon, 1))
         self._action_history_initialized = False
+        self._last_gripper_mode: str | None = None
 
     @classmethod
     def from_config(
@@ -80,6 +89,7 @@ class MPDPolicy(Policy):
     def reset(self) -> None:
         self._executed_action_history.clear()
         self._action_history_initialized = False
+        self._last_gripper_mode = None
 
     def start_episode(self, observation_window: list[dict[str, Any]]) -> None:
         required = set(self.backend.runtime_spec.required_history_keys)
@@ -124,7 +134,7 @@ class MPDPolicy(Policy):
                     float(action["gripper_width"]),
                     open_width_m=self.gripper_open_width_m,
                 )
-            self._executed_action_history.append(pose7d_and_gripper_to_tcp_state(target_tcp, closedness))
+            self._executed_action_history.append(self._pose7d_and_closedness_to_model_state(target_tcp, closedness))
 
     def _states_from_observation_window(self, observation_window: list[dict[str, Any]]) -> np.ndarray:
         if not observation_window:
@@ -147,7 +157,7 @@ class MPDPolicy(Policy):
             float(controller_state.get("gripper_width", self.gripper_open_width_m)),
             open_width_m=self.gripper_open_width_m,
         )
-        return pose7d_and_gripper_to_tcp_state(tcp_pose, closedness)
+        return self._pose7d_and_closedness_to_model_state(tcp_pose, closedness)
 
     def _action_history_for_window(self, states: np.ndarray) -> np.ndarray:
         if not self._action_history_initialized:
@@ -159,16 +169,22 @@ class MPDPolicy(Policy):
         return np.stack(history[-horizon:], axis=0).astype(np.float64)
 
     def _row_to_action(self, row: np.ndarray) -> dict[str, Any]:
-        pose7d, closedness = tcp_state_to_pose7d_and_gripper(row)
+        pose7d, gripper_scalar = tcp_state_to_pose7d_and_gripper(row)
         action: dict[str, Any] = {
             "target_tcp": pose7d.astype(float).tolist(),
             "target_duration_sec": self.target_duration_sec,
             "metadata": {
                 "mpd_tcp_state": np.asarray(row, dtype=np.float64).tolist(),
                 "mpd_algorithm": self.settings.algorithm,
+                "mpd_action_convention": self.action_convention,
             },
         }
-        if closedness >= self.settings.gripper_close_threshold:
+        gripper_mode = (
+            self._gripper_mode_from_open_fraction(gripper_scalar)
+            if self._uses_gripper_open_fraction
+            else self._gripper_mode_from_closedness(gripper_scalar)
+        )
+        if gripper_mode == "close":
             action["gripper_closed"] = True
             action["gripper_velocity"] = self.workspace.teleop.gripper_velocity
             action["gripper_force_limit"] = self.workspace.teleop.grasp_force
@@ -177,6 +193,31 @@ class MPDPolicy(Policy):
             action["gripper_velocity"] = self.workspace.teleop.gripper_velocity
             action["gripper_force_limit"] = self.workspace.teleop.grasp_force
         return action
+
+    def _pose7d_and_closedness_to_model_state(self, pose7d: Any, closedness: float) -> np.ndarray:
+        gripper_scalar = 1.0 - float(closedness) if self._uses_gripper_open_fraction else float(closedness)
+        return pose7d_and_gripper_to_tcp_state(pose7d, gripper_scalar)
+
+    def _gripper_mode_from_closedness(self, closedness: float) -> str:
+        # Temporary FM rollout hysteresis: avoid rapid open/close flips around the old 0.5 threshold.
+        # Original logic was: close when closedness >= self.settings.gripper_close_threshold, otherwise open.
+        if closedness >= 0.5:
+            self._last_gripper_mode = "close"
+        elif closedness <= 0.3:
+            self._last_gripper_mode = "open"
+        elif self._last_gripper_mode is None:
+            self._last_gripper_mode = "close" if closedness >= self.settings.gripper_close_threshold else "open"
+        return self._last_gripper_mode
+
+    def _gripper_mode_from_open_fraction(self, open_fraction: float) -> str:
+        threshold = self.settings.gripper_close_threshold
+        if self._last_gripper_mode is None:
+            self._last_gripper_mode = "close" if open_fraction <= threshold else "open"
+        elif self._last_gripper_mode == "open" and open_fraction <= threshold:
+            self._last_gripper_mode = "close"
+        elif self._last_gripper_mode == "close" and open_fraction >= threshold:
+            self._last_gripper_mode = "open"
+        return self._last_gripper_mode
 
 
 class HydraMPDBackend:
@@ -188,6 +229,7 @@ class HydraMPDBackend:
         self._device = "cpu"
         self._scaler_values = None
         self._runtime_spec: MPDRuntimeSpec | None = None
+        self._action_convention: str | None = None
 
     @property
     def runtime_spec(self) -> MPDRuntimeSpec:
@@ -196,6 +238,12 @@ class HydraMPDBackend:
             _patch_config_for_inference(cfg)
             self._runtime_spec = self._runtime_spec_from_config(cfg)
         return self._runtime_spec
+
+    @property
+    def action_convention(self) -> str:
+        if self._action_convention is None:
+            self._action_convention = self._load_action_convention()
+        return self._action_convention
 
     def predict_action_chunk(self, inputs: dict[str, np.ndarray]) -> np.ndarray:
         self._ensure_loaded()
@@ -319,15 +367,26 @@ class HydraMPDBackend:
         manifest_path = run_dir / "dataset_manifest.json"
         if manifest_path.exists():
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            if manifest.get("action_convention") != "tcp_xyz_rot6d_gripper_closedness":
+            if manifest.get("action_convention") not in {ACTION_CONVENTION_CLOSEDNESS, ACTION_CONVENTION_OPEN_FRACTION}:
                 raise RuntimeError("MPD checkpoint dataset manifest uses an unsupported action_convention")
+
+    def _load_action_convention(self) -> str:
+        run_dir = self.checkpoint_path if self.checkpoint_path.is_dir() else self.checkpoint_path.parent
+        manifest_path = run_dir / "dataset_manifest.json"
+        if not manifest_path.exists():
+            return ACTION_CONVENTION_CLOSEDNESS
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        convention = str(manifest.get("action_convention", ACTION_CONVENTION_CLOSEDNESS))
+        if convention not in {ACTION_CONVENTION_CLOSEDNESS, ACTION_CONVENTION_OPEN_FRACTION}:
+            raise RuntimeError(f"MPD checkpoint dataset manifest uses an unsupported action_convention: {convention}")
+        return convention
 
 
 def _ensure_upstream_repo_on_path(upstream_repo_dir: Path) -> None:
     repo_path = str(Path(upstream_repo_dir).resolve())
-    if sys.path and sys.path[0] == repo_path:
-        return
-    sys.path = [path for path in sys.path if path != repo_path]
+    mp_pytorch_path = str((Path(upstream_repo_dir).resolve() / "dependencies" / "MP_PyTorch"))
+    sys.path = [path for path in sys.path if path not in {repo_path, mp_pytorch_path}]
+    sys.path.insert(0, mp_pytorch_path)
     sys.path.insert(0, repo_path)
 
 

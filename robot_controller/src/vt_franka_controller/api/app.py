@@ -47,7 +47,7 @@ def create_app(service: ControllerService) -> FastAPI:
             service.queue_gripper_width_command(command)
         except ControllerBusyError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return {"status": "queued"}
+        return {"status": "completed" if command.blocking else "queued"}
 
     @app.post("/api/v1/commands/gripper/grasp")
     def grasp_gripper(command: GripperGraspCommand):
@@ -55,7 +55,7 @@ def create_app(service: ControllerService) -> FastAPI:
             service.queue_gripper_grasp_command(command)
         except ControllerBusyError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return {"status": "queued"}
+        return {"status": "completed" if command.blocking else "queued"}
 
     @app.post("/api/v1/actions/reset")
     def reset(command: ResetCommand):
