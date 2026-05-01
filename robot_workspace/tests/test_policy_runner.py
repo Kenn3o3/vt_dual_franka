@@ -252,6 +252,46 @@ def test_policy_runner_requires_outcome_mark_before_next_reset(tmp_path: Path):
     assert runner._initial_pose_completed is True
 
 
+def test_policy_runner_discard_removes_episode_outcome_row(tmp_path: Path):
+    workspace = WorkspaceSettings(
+        recording={"eval_root": tmp_path / "eval", "collect_root": tmp_path / "collect", "image_format": "jpg"},
+        operator_ui={"enabled": False},
+    )
+    inference = InferenceRuntimeSettings(
+        task_name="policy_test",
+        obs_horizon=2,
+        exe_horizon=2,
+        control_hz=100.0,
+        max_duration_sec=1.0,
+        start_countdown_sec=0.0,
+        initial_eef_pose_xyz_rpy_deg=[0.4, 0.0, 0.3, 180.0, 0.0, 0.0],
+        initial_move_duration_sec=0.01,
+        modality=ModalitySettings(proprioception=True),
+        eval={"enabled": False},
+    )
+    controller = FakeController()
+    runner = PolicyRunner(workspace, inference, controller, calibration=None, policy=TwoStepThenTerminatePolicy())
+    runner.sessions = RunSessionManager(tmp_path / "eval")
+    run_dir = runner.sessions.start_run("policy_test")
+    runner.state_monitor = FakeStateMonitor(controller)
+    runner.assembler = ObservationAssembler(
+        modality=inference.modality,
+        state_provider=lambda max_age_sec=None: controller.state,
+        image_format="jpg",
+    )
+    runner._initial_pose_completed = True
+
+    runner.operator_start_episode()
+    runner._wait_for_episode_finish_locked()
+    runner.operator_mark_episode_success()
+    runner.operator_discard_latest_episode()
+
+    assert not (run_dir / "episodes" / "episode_0000").exists()
+    assert (run_dir / "episode_outcomes.csv").read_text(encoding="utf-8").splitlines() == [
+        "outcome,episode",
+    ]
+
+
 def test_policy_runner_groups_eval_runs_by_policy(tmp_path: Path):
     workspace = WorkspaceSettings(
         recording={"eval_root": tmp_path / "eval", "collect_root": tmp_path / "collect", "image_format": "jpg"},

@@ -504,6 +504,7 @@ class PolicyRunner:
         episode_dir = self._latest_saved_episode_dir or self.sessions.get_latest_saved_episode_dir()
         if episode_dir is None:
             raise OperatorActionError("No saved policy episode to discard.")
+        self._remove_episode_outcome_locked(episode_dir)
         self.sessions.discard_episode(episode_dir)
         self.sessions.record_operator_event("episode_discarded", {"episode_dir": str(episode_dir)})
         LOGGER.info("Discarded policy episode: %s", episode_dir)
@@ -548,6 +549,26 @@ class PolicyRunner:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest.setdefault("metadata", {})["operator_outcome"] = outcome
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    def _remove_episode_outcome_locked(self, episode_dir: Path) -> None:
+        run_dir = self.sessions.get_active_run_dir()
+        if run_dir is None:
+            return
+        path = run_dir / "episode_outcomes.csv"
+        if not path.exists():
+            return
+        rows: list[tuple[str, str]] = []
+        with path.open("r", newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                episode = row.get("episode")
+                outcome = row.get("outcome")
+                if episode and outcome and episode != episode_dir.name:
+                    rows.append((outcome, episode))
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.writer(handle)
+            writer.writerow(["outcome", "episode"])
+            writer.writerows(rows)
 
     def _is_ready_for_episode_locked(self) -> tuple[bool, list[str]]:
         reasons: list[str] = []
