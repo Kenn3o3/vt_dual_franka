@@ -6,7 +6,9 @@ import logging
 from vt_franka_shared.config import load_yaml_model
 
 from .backends.mock import MockFrankaBackend
+from .backends.gripper_only import PolymetisGripperOnlyBackend
 from .backends.polymetis import PolymetisFrankaBackend
+from .control.gripper_service import GripperTestbedService
 from .control.service import ControllerService
 from .settings import ControllerSettings
 
@@ -26,12 +28,27 @@ def build_backend(settings: ControllerSettings):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="VT Franka controller CLI")
-    parser.add_argument("command", choices=["run", "home"], help="Command to execute")
+    parser.add_argument("command", choices=["run", "home", "ready", "gripper-testbed"], help="Command to execute")
     parser.add_argument("--config", default="config/controller.yaml", help="Path to YAML config")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     settings = load_yaml_model(args.config, ControllerSettings)
+    if args.command == "gripper-testbed":
+        try:
+            import uvicorn
+            from .api.gripper_testbed_app import create_gripper_testbed_app
+        except ImportError as exc:
+            raise RuntimeError("Failed to import FastAPI/uvicorn for 'vt-franka-controller gripper-testbed'.") from exc
+        backend = MockFrankaBackend() if settings.backend.kind == "mock" else PolymetisGripperOnlyBackend(
+            gripper_ip=settings.backend.gripper_ip,
+            gripper_port=settings.backend.gripper_port,
+        )
+        service = GripperTestbedService(settings, backend)
+        app = create_gripper_testbed_app(service)
+        uvicorn.run(app, host=settings.server.host, port=settings.server.port)
+        return
+
     backend = build_backend(settings)
 
     if args.command == "home":
@@ -57,3 +74,7 @@ def main() -> None:
     service = ControllerService(settings, backend)
     app = create_app(service)
     uvicorn.run(app, host=settings.server.host, port=settings.server.port)
+
+
+if __name__ == "__main__":
+    main()

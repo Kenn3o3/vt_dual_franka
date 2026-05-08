@@ -40,6 +40,20 @@ def setup_agent(cfg: DictConfig, train_dataloader: DataLoader) -> BaseAgent:
     for info in cfg.agent_config.process_batch_config.action_keys:
         info.feature_size = list(data[info.key].shape[2:])
 
+    # FreqPolicy does not use the usual inner_model_config fields, so infer its
+    # dimensions from the fixed-split dataset after the feature sizes are known.
+    if hasattr(cfg.agent_config.model_config, "action_dim") and cfg.agent_config.model_config.action_dim is None:
+        action_dim = 0
+        for action_info in cfg.agent_config.process_batch_config.action_keys:
+            action_dim += int(action_info.feature_size[0]) if action_info.feature_size else int(data[action_info.key].shape[-1])
+        cfg.agent_config.model_config.action_dim = action_dim
+
+    if hasattr(cfg.agent_config.model_config, "state_dim") and cfg.agent_config.model_config.state_dim is None:
+        state_dim = 0
+        for obs_key in encoder_observation_keys:
+            state_dim += int(data[obs_key].shape[-1])
+        cfg.agent_config.model_config.state_dim = state_dim
+
     # NOTE: movement_primitive_diffusion.utils.lr_scheduler.get_scheduler expects the number of training steps as argument.
     # to not break compatibility with directly instantiating other schedulers, we check for the existence of the
     # num_training_steps attribute.

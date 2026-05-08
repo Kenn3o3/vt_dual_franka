@@ -71,6 +71,8 @@ class MPDPolicy(Policy):
         self._executed_action_history: deque[np.ndarray] = deque(maxlen=max(self.backend.runtime_spec.obs_horizon, 1))
         self._action_history_initialized = False
         self._last_gripper_mode: str | None = None
+        self._last_commanded_gripper_mode: str | None = None
+        self._gripper_switch_lockout_remaining = 0
 
     @classmethod
     def from_config(
@@ -90,6 +92,8 @@ class MPDPolicy(Policy):
         self._executed_action_history.clear()
         self._action_history_initialized = False
         self._last_gripper_mode = None
+        self._last_commanded_gripper_mode = None
+        self._gripper_switch_lockout_remaining = 0
 
     def start_episode(self, observation_window: list[dict[str, Any]]) -> None:
         required = set(self.backend.runtime_spec.required_history_keys)
@@ -184,6 +188,7 @@ class MPDPolicy(Policy):
             if self._uses_gripper_open_fraction
             else self._gripper_mode_from_closedness(gripper_scalar)
         )
+        gripper_mode = self._apply_gripper_switch_lockout(gripper_mode)
         if gripper_mode == "close":
             action["gripper_closed"] = True
             action["gripper_velocity"] = self.workspace.teleop.gripper_velocity
@@ -193,6 +198,18 @@ class MPDPolicy(Policy):
             action["gripper_velocity"] = self.workspace.teleop.gripper_velocity
             action["gripper_force_limit"] = self.workspace.teleop.grasp_force
         return action
+
+    def _apply_gripper_switch_lockout(self, requested_mode: str) -> str:
+        if self._last_commanded_gripper_mode is None:
+            self._last_commanded_gripper_mode = requested_mode
+            return requested_mode
+        if self._gripper_switch_lockout_remaining > 0:
+            self._gripper_switch_lockout_remaining -= 1
+            return self._last_commanded_gripper_mode
+        if requested_mode != self._last_commanded_gripper_mode:
+            self._last_commanded_gripper_mode = requested_mode
+            self._gripper_switch_lockout_remaining = self.settings.gripper_switch_lockout_actions
+        return self._last_commanded_gripper_mode
 
     def _pose7d_and_closedness_to_model_state(self, pose7d: Any, closedness: float) -> np.ndarray:
         gripper_scalar = 1.0 - float(closedness) if self._uses_gripper_open_fraction else float(closedness)
@@ -419,6 +436,15 @@ def _patch_config_for_inference(cfg: Any) -> None:
             network_config.feature_size = [10]
         if hasattr(network_config.network_config, "feature_size") and network_config.network_config.feature_size is None:
             network_config.network_config.feature_size = network_config.feature_size
+    model_config = cfg.agent_config.model_config
+    if hasattr(model_config, "action_dim") and model_config.action_dim is None:
+        model_config.action_dim = 10
+    if hasattr(model_config, "state_dim") and model_config.state_dim is None:
+        model_config.state_dim = sum(
+            int(size)
+            for network_config in cfg.agent_config.encoder_config.network_configs
+            for size in network_config.feature_size
+        )
 
 
 def _patch_config_device(cfg: Any, device: str) -> None:
@@ -428,10 +454,16 @@ def _patch_config_device(cfg: Any, device: str) -> None:
     for attr in ("prodmp_handler_config", "motif_handler_config"):
         if hasattr(process_config, attr):
             getattr(process_config, attr).device = device
-    inner_model_config = cfg.agent_config.model_config.inner_model_config
-    for attr in ("prodmp_handler_config", "motif_handler_config"):
-        if hasattr(inner_model_config, attr):
-            getattr(inner_model_config, attr).device = device
+    model_config = cfg.agent_config.model_config
+    if hasattr(model_config, "device"):
+        model_config.device = device
+    if hasattr(model_config, "inner_model_config"):
+        inner_model_config = model_config.inner_model_config
+        if hasattr(inner_model_config, "device"):
+            inner_model_config.device = device
+        for attr in ("prodmp_handler_config", "motif_handler_config"):
+            if hasattr(inner_model_config, attr):
+                getattr(inner_model_config, attr).device = device
 
 
 def _patch_process_batch_runtime(process_batch: Any, process_config: Any) -> None:

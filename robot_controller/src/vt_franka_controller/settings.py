@@ -10,6 +10,12 @@ class ServerSettings(BaseModel):
     port: int = 8092
 
 
+class TeleopGripperDefaults(BaseModel):
+    max_gripper_width: float = 0.078
+    gripper_velocity: float = 0.1
+    grasp_force: float = 7.0
+
+
 class BackendSettings(BaseModel):
     kind: Literal["polymetis", "mock"] = "polymetis"
     robot_ip: str = "127.0.0.1"
@@ -45,3 +51,4 @@ class ControllerSettings(BaseModel):
     server: ServerSettings = Field(default_factory=ServerSettings)
     backend: BackendSettings = Field(default_factory=BackendSettings)
     control: ControlSettings = Field(default_factory=ControlSettings)
+    teleop: TeleopGripperDefaults = Field(default_factory=TeleopGripperDefaults)

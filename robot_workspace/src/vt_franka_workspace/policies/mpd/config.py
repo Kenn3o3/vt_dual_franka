@@ -8,8 +8,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ...config import PolicyConfig, WorkspaceSettings
 
-AlgorithmName = Literal["dp", "fm", "sfp", "mpd", "motif"]
-PolicyFamily = Literal["chunk", "prodmp", "motif"]
+AlgorithmName = Literal["dp", "fm", "sfp", "mpd", "motif", "freqpolicy"]
+PolicyFamily = Literal["chunk", "prodmp", "motif", "freqpolicy"]
 
 DEFAULT_DATASET_NAME = "vt_franka_mpd_v1"
 DEFAULT_UPSTREAM_REPO = Path("/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/third_parties/mpd")
@@ -33,6 +33,7 @@ class MPDPolicySpec:
             "sfp": "train_sfp_transformer",
             "mpd": "train_prodmp_transformer",
             "motif": "train_motif_transformer",
+            "freqpolicy": "train_freqpolicy",
         }[self.algorithm]
         return f"experiments/{experiment}/{config_leaf}"
 
@@ -73,11 +74,20 @@ _POLICY_SPECS: dict[str, MPDPolicySpec] = {
         reference_model_name="motif",
         method_names=("motif", "motif_transformer"),
     ),
+    "freqpolicy": MPDPolicySpec(
+        algorithm="freqpolicy",
+        policy_name="freqpolicy_state",
+        family="freqpolicy",
+        reference_model_name="freqpolicy",
+        method_names=("freqpolicy", "freqpolicy_official"),
+    ),
 }
 
 _ALIASES = {
     "prodmp_diffusion": "mpd",
     "motif_diffusion": "motif",
+    "freqpolicy_official": "freqpolicy",
+    "freq_policy": "freqpolicy",
 }
 
 _REJECTED = {
@@ -144,6 +154,7 @@ class MPDPolicySettings(BaseModel):
     gripper_close_threshold: float = 0.5
     gripper_open_width_m: float | None = None
     target_duration_sec: float | None = None
+    gripper_switch_lockout_actions: int = 0
 
     @field_validator("action_dim")
     @classmethod
@@ -157,6 +168,13 @@ class MPDPolicySettings(BaseModel):
     def _validate_gripper_threshold(cls, value: float) -> float:
         if not 0.0 <= value <= 1.0:
             raise ValueError("gripper_close_threshold must be in [0, 1]")
+        return value
+
+    @field_validator("gripper_switch_lockout_actions")
+    @classmethod
+    def _validate_gripper_switch_lockout_actions(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("gripper_switch_lockout_actions must be non-negative")
         return value
 
     @model_validator(mode="after")

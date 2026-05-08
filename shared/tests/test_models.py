@@ -1,6 +1,6 @@
 import pytest
 
-from vt_franka_shared.models import ResetCommand, parse_unity_teleop_message
+from vt_franka_shared.models import GripperTestbedTargetCommand, ResetCommand, parse_unity_teleop_message
 
 
 def test_parse_unity_teleop_message_accepts_nested_payload():
@@ -67,3 +67,13 @@ def test_reset_command_rejects_invalid_lengths_and_negative_values():
         ResetCommand(eef_pose_xyz_rpy_deg=[0.0] * 5)
     with pytest.raises(ValueError):
         ResetCommand(joint_duration_sec=-1.0)
+
+
+def test_gripper_testbed_target_validates_range():
+    command = GripperTestbedTargetCommand(target_width=0.02, velocity=0.05, force_limit=5.0, trigger_depth=0.8)
+    assert command.target_width == 0.02
+
+    with pytest.raises(ValueError):
+        GripperTestbedTargetCommand(target_width=-0.01)
+    with pytest.raises(ValueError):
+        GripperTestbedTargetCommand(target_width=0.01, trigger_depth=1.2)

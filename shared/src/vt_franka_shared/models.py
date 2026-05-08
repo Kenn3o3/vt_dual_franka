@@ -53,6 +53,38 @@ class GripperGraspCommand(BaseModel):
     source: str = "unknown"
 
 
+class GripperTestbedTargetCommand(BaseModel):
+    target_width: float
+    velocity: float = 0.1
+    force_limit: float = 5.0
+    trigger_depth: Optional[float] = None
+    sequence: Optional[int] = None
+    issued_at_wall_time: float = Field(default_factory=time.time)
+    issued_at_monotonic_time: float = Field(default_factory=time.monotonic)
+    source: str = "gripper_testbed"
+
+    @field_validator("target_width")
+    @classmethod
+    def _validate_width(cls, value: float) -> float:
+        if value < 0.0:
+            raise ValueError("target_width must be non-negative")
+        return value
+
+    @field_validator("velocity", "force_limit")
+    @classmethod
+    def _validate_positive(cls, value: float, info) -> float:
+        if value <= 0.0:
+            raise ValueError(f"{info.field_name} must be positive")
+        return value
+
+    @field_validator("trigger_depth")
+    @classmethod
+    def _validate_trigger_depth(cls, value: Optional[float]) -> Optional[float]:
+        if value is not None and not 0.0 <= value <= 1.0:
+            raise ValueError("trigger_depth must be in [0, 1]")
+        return value
+
+
 class ResetCommand(BaseModel):
     profile: str = "ready"
     joint_positions: Optional[List[float]] = None

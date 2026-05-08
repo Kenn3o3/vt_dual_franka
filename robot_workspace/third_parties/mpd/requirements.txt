@@ -38,3 +38,5 @@ scipy
 tqdm
 pyyaml
 regex
+einops
+torch-dct>=0.1.5

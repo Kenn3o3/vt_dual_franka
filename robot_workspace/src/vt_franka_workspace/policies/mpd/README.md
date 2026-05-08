@@ -9,6 +9,7 @@ Supported algorithms:
 - `sfp`
 - `mpd`
 - `motif`
+- `freqpolicy`
 
 Unsupported by design:
 
@@ -91,6 +92,13 @@ When a checkpoint is trained from this dataset, the train script copies the data
 
 ## Train
 
+FreqPolicy requires the MPD environment to include the official implementation's DCT/diffusion helpers:
+
+```bash
+conda activate mpd
+pip install torch-dct einops
+```
+
 DP:
 
 ```bash
@@ -132,9 +140,18 @@ python -m vt_franka_workspace.policies.mpd.train \
   --epochs 500 \
   --swanlab-group motif_state_gripper_open_smooth_t050
 
+python -m vt_franka_workspace.policies.mpd.train \
+  --workspace-config robot_workspace/config/workspace.yaml \
+  --task-name put_cup_on_plate \
+  --algorithm freqpolicy \
+  --device cuda \
+  --epochs 500 \
+  --checkpoint-dir robot_workspace/data/checkpoints/put_cup_on_plate/mpd/freqpolicy/freqpolicy_state \
+  --swanlab-group freqpolicy_state
+
 ```
 
-Other algorithms use the same command with `--algorithm dp`, `--algorithm fm`, `--algorithm sfp`, `--algorithm mpd`, or `--algorithm motif`.
+Other algorithms use the same command with `--algorithm dp`, `--algorithm fm`, `--algorithm sfp`, `--algorithm mpd`, `--algorithm motif`, or `--algorithm freqpolicy`.
 
 Checkpoints are written to:
 
@@ -166,5 +183,16 @@ The real-robot adapter mirrors the simulator observation contract:
 
 - `dp`, `fm`, `sfp` consume `agent_pos`.
 - `mpd`, `motif` consume `agent_pos` plus action history for `action/action_vel` initial conditions.
+- `freqpolicy` consumes `agent_pos`.
+
+FreqPolicy inference:
+
+```bash
+vt-franka-workspace run-policy \
+  --workspace-config robot_workspace/config/workspace.yaml \
+  --policy-config robot_workspace/config/policies/mpd_freqpolicy_state.yaml \
+  --inference-config robot_workspace/config/inference/mpd_state.yaml \
+  --run-name freqpolicy_state_test
+```
 
 At episode start, action history is initialized explicitly from the padded initial observation, matching the simulator reset behavior where initial `action` equals current `agent_pos`. After each executed chunk, `PolicyRunner` feeds the actually executed actions back into the policy before the next inference call. There is no hidden postprocessing or temporal aggregation.

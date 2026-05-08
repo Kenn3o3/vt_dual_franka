@@ -1,0 +1,37 @@
+_target_: movement_primitive_diffusion.agents.freqpolicy_agent.FreqpolicyAgent
+_recursive_: False
+
+defaults:
+  - model_config: freqpolicy_model
+  - _self_
+
+device: null
+
+t_obs: ${t_obs}
+predict_past: ${predict_past}
+
+use_ema: True
+ema_config:
+  decay: 0.999
+  min_decay: 0.0
+  update_after_step: 0
+  use_ema_warmup: True
+  inv_gamma: 1.0
+  power: 0.75
+
+special_optimizer_function: False
+special_optimizer_config: null
+
+optimizer_config:
+  _target_: torch.optim.AdamW
+  lr: 1.0e-4
+  betas: [0.95, 0.999]
+  eps: 1.0e-8
+  weight_decay: 1.0e-3
+
+lr_scheduler_config:
+  _target_: movement_primitive_diffusion.utils.lr_scheduler.get_scheduler
+  name: cosine
+  num_warmup_steps: 500
+  num_training_steps: null
+  last_epoch: -1

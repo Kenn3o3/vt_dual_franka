@@ -1,0 +1,8 @@
+type: mpd
+checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/put_cup_on_plate/mpd/motif/motif_state_gripper_open_smooth_t050_modes1/model_last_epoch.pth
+config:
+  algorithm: motif
+  task_name: put_cup_on_plate
+  policy_name: motif_state_gripper_open_smooth_t050_modes1
+  device: cuda
+  gripper_switch_lockout_actions: 24

@@ -169,7 +169,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Train MPD-family policies on prepared VT Franka datasets")
     parser.add_argument("--workspace-config", default="robot_workspace/config/workspace.yaml")
     parser.add_argument("--task-name", required=True)
-    parser.add_argument("--algorithm", required=True, choices=["dp", "fm", "sfp", "mpd", "motif"])
+    parser.add_argument("--algorithm", required=True, choices=["dp", "fm", "sfp", "mpd", "motif", "freqpolicy"])
     parser.add_argument("--prepared-dataset-dir", type=Path, default=None)
     parser.add_argument("--checkpoint-dir", type=Path, default=None)
     parser.add_argument("--upstream-repo-dir", type=Path, default=DEFAULT_UPSTREAM_REPO)

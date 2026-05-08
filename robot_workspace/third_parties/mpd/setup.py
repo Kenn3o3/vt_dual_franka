@@ -29,6 +29,8 @@ setup(
         "plotly", # For ObstacleAvoidance
         "pandas", # For ObstacleAvoidance
         "addict",
+        "einops",
+        "torch-dct>=0.1.5",
     ],
     python_requires=">=3.10",
 )

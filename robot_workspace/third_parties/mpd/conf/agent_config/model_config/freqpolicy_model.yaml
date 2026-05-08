@@ -1,0 +1,20 @@
+_target_: movement_primitive_diffusion.models.freqpolicy_wrapper.FreqpolicyWrapper
+_recursive_: False
+
+action_dim: null
+state_dim: null
+t_pred: ${t_pred}
+n_obs_steps: ${t_obs}
+
+encoder_embed_dim: 128
+encoder_depth: 3
+decoder_embed_dim: 128
+decoder_depth: 3
+
+num_iter: 5
+num_sampling_steps: 10
+
+diffloss_d: 6
+diffloss_w: 144
+
+device: ${device}

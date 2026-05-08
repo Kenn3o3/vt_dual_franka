@@ -50,7 +50,9 @@ class FakeMPDBackend:
 
 def test_mpd_algorithm_mapping_rejects_retired_variants():
     assert normalize_algorithm_name("prodmp_diffusion") == "mpd"
+    assert normalize_algorithm_name("freqpolicy_official") == "freqpolicy"
     assert get_policy_spec("motif").upstream_config_name("put_cup_on_plate").endswith("train_motif_transformer")
+    assert get_policy_spec("freqpolicy").upstream_config_name("put_cup_on_plate").endswith("train_freqpolicy")
     with pytest.raises(ValueError):
         normalize_algorithm_name("prodmp_fm")
     with pytest.raises(ValueError):
@@ -65,6 +67,9 @@ def test_mpd_checkpoint_path_layout(tmp_path: Path):
 
     assert run_dir == tmp_path / "checkpoints" / "put_cup_on_plate" / "mpd" / "dp" / "dp_state"
     assert checkpoint == run_dir / "best_model.pth"
+
+    freqpolicy_run_dir = checkpoint_run_dir(workspace, task_name="put_cup_on_plate", algorithm="freqpolicy")
+    assert freqpolicy_run_dir == tmp_path / "checkpoints" / "put_cup_on_plate" / "mpd" / "freqpolicy" / "freqpolicy_state"
 
 
 def test_mpd_vector_round_trip():
@@ -131,6 +136,30 @@ def test_mpd_policy_uses_temporary_gripper_hysteresis():
     assert policy._gripper_mode_from_closedness(0.6) == "close"
     assert policy._gripper_mode_from_closedness(0.4) == "close"
     assert policy._gripper_mode_from_closedness(0.2) == "open"
+
+
+def test_mpd_policy_locks_gripper_mode_after_switch():
+    workspace = WorkspaceSettings()
+    inference = InferenceRuntimeSettings(obs_horizon=3, exe_horizon=2, control_hz=10.0)
+    policy_config = PolicyConfig(
+        type="mpd",
+        config={
+            "algorithm": "motif",
+            "task_name": "put_cup_on_plate",
+            "gripper_switch_lockout_actions": 3,
+        },
+    )
+    settings, checkpoint = policy_config_to_settings(policy_config, workspace, inference)
+    policy = MPDPolicy(settings, checkpoint, inference, workspace, backend=FakeMPDBackend(required_history_keys=()))
+    open_state = pose7d_and_gripper_to_tcp_state([0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0], 0.0)
+    close_state = pose7d_and_gripper_to_tcp_state([0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0], 1.0)
+
+    assert policy._row_to_action(open_state)["gripper_width"] == pytest.approx(0.078)
+    assert policy._row_to_action(close_state)["gripper_closed"] is True
+    assert policy._row_to_action(open_state)["gripper_closed"] is True
+    assert policy._row_to_action(open_state)["gripper_closed"] is True
+    assert policy._row_to_action(open_state)["gripper_closed"] is True
+    assert policy._row_to_action(open_state)["gripper_width"] == pytest.approx(0.078)
 
 
 def test_mpd_policy_supports_open_fraction_gripper_convention():
@@ -308,6 +337,32 @@ def test_train_command_uses_checkpoint_root_and_disables_sim_eval(tmp_path: Path
     assert f"+train_trajectory_dir={(prepared / 'train').resolve()}" in command
     assert f"+val_trajectory_dir={(prepared / 'val').resolve()}" in command
     assert f"hydra.run.dir={(tmp_path / 'checkpoints' / 'put_cup_on_plate' / 'mpd' / 'dp' / 'dp_state').resolve()}" in command
+
+
+def test_train_command_supports_freqpolicy(tmp_path: Path):
+    workspace = WorkspaceSettings(
+        recording={
+            "prepared_root": tmp_path / "prepared",
+            "checkpoints_root": tmp_path / "checkpoints",
+        }
+    )
+    prepared = tmp_path / "prepared" / "mpd" / "put_cup_on_plate" / "vt_franka_mpd_v1"
+    prepared.mkdir(parents=True)
+    (prepared / "dataset_manifest.json").write_text(json.dumps({"dt": 0.1}), encoding="utf-8")
+    config = build_train_config_from_workspace(
+        workspace,
+        task_name="put_cup_on_plate",
+        algorithm="freqpolicy",
+        prepared_dataset_dir=prepared,
+        python="python",
+        epochs=1,
+    )
+
+    command = build_train_command(config)
+
+    assert "--config-name=experiments/put_cup_on_plate/train_freqpolicy" in command
+    assert "method_name=freqpolicy" in command
+    assert f"hydra.run.dir={(tmp_path / 'checkpoints' / 'put_cup_on_plate' / 'mpd' / 'freqpolicy' / 'freqpolicy_state').resolve()}" in command
 
 
 def test_registry_resolves_mpd_policy(monkeypatch):

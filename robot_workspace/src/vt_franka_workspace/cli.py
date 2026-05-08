@@ -5,6 +5,7 @@ import logging
 from pathlib import Path
 
 from vt_franka_shared.transforms import SingleArmCalibration
+from vt_franka_shared.config import load_yaml_model
 
 from .collection import DataCollector
 from .config import (
@@ -14,6 +15,9 @@ from .config import (
     load_workspace_config,
 )
 from .controller.client import ControllerClient
+from .gripper_testbed import GripperTestbedControllerClient, GripperTestbedService, GripperTestbedSettings, create_gripper_testbed_app
+from .gripper_testbed.report import write_gripper_testbed_report
+from .gripper_testbed.replay import create_gripper_testbed_replay_app
 from .inference import PolicyRunner
 from .operator import OperatorLogBuffer, install_operator_logging
 from .policies import resolve_policy
@@ -36,6 +40,16 @@ def main() -> None:
     run_policy.add_argument("--run-name", default=None)
     run_policy.add_argument("--no-resume", action="store_true")
 
+    gripper_testbed = subparsers.add_parser("gripper-testbed", help="Run the standalone Panda Hand gripper testbed")
+    gripper_testbed.add_argument("--config", default="config/gripper_testbed.yaml")
+    gripper_report = subparsers.add_parser("gripper-testbed-report", help="Generate a static HTML report from a gripper testbed run")
+    gripper_report.add_argument("--run-dir", required=True)
+    gripper_report.add_argument("--output", default=None)
+    gripper_replay = subparsers.add_parser("gripper-testbed-replay", help="Replay a gripper testbed run in the dashboard")
+    gripper_replay.add_argument("--run-dir", required=True)
+    gripper_replay.add_argument("--host", default="127.0.0.1")
+    gripper_replay.add_argument("--port", type=int, default=8085)
+
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -52,6 +66,38 @@ def main() -> None:
             _load_calibration(workspace),
             log_buffer=log_buffer,
         ).run()
+        return
+
+    if args.command == "gripper-testbed":
+        settings = load_yaml_model(args.config, GripperTestbedSettings)
+        log_buffer = OperatorLogBuffer()
+        install_operator_logging(log_buffer, suppress_console_noise=False)
+        controller = GripperTestbedControllerClient(
+            settings.controller_host,
+            settings.controller_port,
+            settings.controller_request_timeout_sec,
+        )
+        service = GripperTestbedService(settings, controller, operator_log_buffer=log_buffer)
+        try:
+            import uvicorn
+        except ImportError as exc:
+            raise RuntimeError("Failed to import uvicorn for gripper-testbed") from exc
+        print(f"Gripper testbed UI: http://{settings.host}:{settings.port}/operator", flush=True)
+        uvicorn.run(create_gripper_testbed_app(service, operator_log_buffer=log_buffer), host=settings.host, port=settings.port)
+        return
+
+    if args.command == "gripper-testbed-report":
+        report = write_gripper_testbed_report(args.run_dir, args.output)
+        print(str(report), flush=True)
+        return
+
+    if args.command == "gripper-testbed-replay":
+        try:
+            import uvicorn
+        except ImportError as exc:
+            raise RuntimeError("Failed to import uvicorn for gripper-testbed-replay") from exc
+        print(f"Gripper testbed replay UI: http://{args.host}:{args.port}/operator", flush=True)
+        uvicorn.run(create_gripper_testbed_replay_app(args.run_dir), host=args.host, port=args.port)
         return
 
     if args.command == "run-policy":
