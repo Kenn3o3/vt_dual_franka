@@ -101,7 +101,11 @@ class PolymetisFrankaBackend(FrankaBackend):
         self._gripper.grasp(speed=velocity, force=force_limit)
 
     def stop_gripper(self) -> None:
-        LOGGER.info("Polymetis gripper stop is not exposed; keeping current state")
+        stop = getattr(self._gripper, "stop", None)
+        if stop is None:
+            LOGGER.warning("Polymetis GripperInterface has no stop(); cannot interrupt gripper motion")
+            return
+        stop()
 
     def go_home(self, ee_pose: Sequence[float], duration_sec: float) -> None:
         ee_pose = np.asarray(ee_pose, dtype=np.float64)

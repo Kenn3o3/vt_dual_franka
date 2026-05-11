@@ -1,8 +1,10 @@
 import time
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
 from vt_franka_controller.api.gripper_testbed_app import create_gripper_testbed_app
+from vt_franka_controller.backends.gripper_only import PolymetisGripperOnlyBackend
 from vt_franka_controller.backends.mock import MockFrankaBackend
 from vt_franka_controller.control.gripper_service import GripperTestbedService
 from vt_franka_controller.settings import BackendSettings, ControlSettings, ControllerSettings, ServerSettings
@@ -67,6 +69,31 @@ def test_gripper_testbed_replaces_pending_commands():
 
         assert state is not None
         assert state["gripper_width"] == 0.04
-        status = client.get("/api/v1/gripper/status").json()
-        assert status["replaced_command_count"] >= 1
+    status = client.get("/api/v1/gripper/status").json()
+    assert status["replaced_command_count"] >= 1
 
+
+def test_gripper_only_backend_accepts_dict_state_without_polymetis_constructor():
+    backend = PolymetisGripperOnlyBackend.__new__(PolymetisGripperOnlyBackend)
+    backend._gripper = SimpleNamespace(get_state=lambda: {"width": [0.042], "force": [3.5]})
+    backend._last_width = 0.078
+    backend._last_force = 0.0
+    backend._state_warning_logged = False
+
+    state = backend.get_controller_state(50.0)
+
+    assert state.gripper_width == 0.042
+    assert state.gripper_force == 3.5
+
+
+def test_gripper_only_backend_falls_back_when_width_missing():
+    backend = PolymetisGripperOnlyBackend.__new__(PolymetisGripperOnlyBackend)
+    backend._gripper = SimpleNamespace(get_state=lambda: SimpleNamespace(other=1.0))
+    backend._last_width = 0.055
+    backend._last_force = 2.0
+    backend._state_warning_logged = False
+
+    state = backend.get_controller_state(50.0)
+
+    assert state.gripper_width == 0.055
+    assert state.gripper_force == 2.0
