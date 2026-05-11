@@ -150,10 +150,16 @@ class PolymetisGripperOnlyBackend(FrankaBackend):
 
     def stop_gripper(self) -> None:
         stop = getattr(self._gripper, "stop", None)
-        if stop is None:
-            LOGGER.warning("Polymetis GripperInterface has no stop(); cannot interrupt gripper motion")
+        if stop is not None:
+            stop()
             return
-        stop()
+        LOGGER.warning(
+            "Polymetis GripperInterface has no stop(); available methods=%s. "
+            "Falling back to goto(current_width).",
+            self._public_methods(self._gripper),
+        )
+        state = self.get_controller_state(control_frequency_hz=0.0)
+        self.move_gripper(state.gripper_width, velocity=0.001, force_limit=max(self._last_force, 1.0))
 
     def go_home(self, ee_pose: Sequence[float], duration_sec: float) -> None:
         raise RuntimeError("Gripper-only backend does not support arm motion")
@@ -163,3 +169,7 @@ class PolymetisGripperOnlyBackend(FrankaBackend):
 
     def shutdown(self) -> None:
         return None
+
+    @staticmethod
+    def _public_methods(obj: Any) -> list[str]:
+        return sorted(name for name in dir(obj) if not name.startswith("_") and callable(getattr(obj, name, None)))

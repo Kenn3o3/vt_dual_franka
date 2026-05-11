@@ -102,10 +102,16 @@ class PolymetisFrankaBackend(FrankaBackend):
 
     def stop_gripper(self) -> None:
         stop = getattr(self._gripper, "stop", None)
-        if stop is None:
-            LOGGER.warning("Polymetis GripperInterface has no stop(); cannot interrupt gripper motion")
+        if stop is not None:
+            stop()
             return
-        stop()
+        LOGGER.warning(
+            "Polymetis GripperInterface has no stop(); available methods=%s. "
+            "Falling back to goto(current_width).",
+            self._public_methods(self._gripper),
+        )
+        state = self.get_controller_state(control_frequency_hz=0.0)
+        self.move_gripper(state.gripper_width, velocity=0.001, force_limit=max(state.gripper_force, 1.0))
 
     def go_home(self, ee_pose: Sequence[float], duration_sec: float) -> None:
         ee_pose = np.asarray(ee_pose, dtype=np.float64)
@@ -128,3 +134,7 @@ class PolymetisFrankaBackend(FrankaBackend):
             self._robot.terminate_current_policy()
         except Exception:  # pragma: no cover - best effort on hardware shutdown
             LOGGER.exception("Failed to terminate current Polymetis policy cleanly")
+
+    @staticmethod
+    def _public_methods(obj) -> list[str]:
+        return sorted(name for name in dir(obj) if not name.startswith("_") and callable(getattr(obj, name, None)))
