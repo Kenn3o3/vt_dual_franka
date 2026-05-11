@@ -24,6 +24,27 @@ class BackendSettings(BaseModel):
     gripper_port: int = 50052
 
 
+class RosGripperActionSettings(BaseModel):
+    action_namespace: str = "/franka_gripper"
+    joint_states_topic: str = "/franka_gripper/joint_states"
+    max_gripper_width: float = 0.078
+    close_width_threshold: float = 0.001
+    default_velocity: float = 0.05
+    default_force_limit: float = 7.0
+    grasp_epsilon_inner: float = 0.001
+    grasp_epsilon_outer: float = 0.08
+    action_server_timeout_sec: float = 2.0
+    action_result_timeout_sec: float = 10.0
+    state_stale_after_sec: float = 1.0
+    home_on_start: bool = False
+
+
+class RosGripperTestbedSettings(BaseModel):
+    server: ServerSettings = Field(default_factory=lambda: ServerSettings(port=8094))
+    ros: RosGripperActionSettings = Field(default_factory=RosGripperActionSettings)
+    control_frequency_hz: float = 60.0
+
+
 class ControlSettings(BaseModel):
     control_frequency_hz: float = 300.0
     teleop_command_hz: float = 60.0

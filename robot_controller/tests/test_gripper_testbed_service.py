@@ -4,10 +4,11 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from vt_franka_controller.api.gripper_testbed_app import create_gripper_testbed_app
+from vt_franka_controller.backends.franka_ros_gripper import FrankaRosGripperOnlyBackend, RosGripperState
 from vt_franka_controller.backends.gripper_only import PolymetisGripperOnlyBackend
 from vt_franka_controller.backends.mock import MockFrankaBackend
 from vt_franka_controller.control.gripper_service import GripperTestbedService
-from vt_franka_controller.settings import BackendSettings, ControlSettings, ControllerSettings, ServerSettings
+from vt_franka_controller.settings import BackendSettings, ControlSettings, ControllerSettings, RosGripperActionSettings, ServerSettings
 
 
 def _settings():
@@ -97,3 +98,58 @@ def test_gripper_only_backend_falls_back_when_width_missing():
 
     assert state.gripper_width == 0.055
     assert state.gripper_force == 2.0
+
+
+class FakeRosGripperDriver:
+    def __init__(self):
+        self.calls = []
+        self.state = RosGripperState(width=0.078, force=0.0, wall_time=time.time())
+
+    def move(self, *, width, speed):
+        self.calls.append(("move", width, speed))
+        self.state = RosGripperState(width=width, force=self.state.force, wall_time=time.time())
+
+    def grasp(self, *, width, speed, force, epsilon_inner, epsilon_outer):
+        self.calls.append(("grasp", width, speed, force, epsilon_inner, epsilon_outer))
+        self.state = RosGripperState(width=width, force=force, wall_time=time.time())
+
+    def stop(self):
+        self.calls.append(("stop",))
+
+    def get_state(self):
+        return self.state
+
+    def home(self):
+        self.calls.append(("home",))
+
+    def shutdown(self):
+        self.calls.append(("shutdown",))
+
+
+def test_franka_ros_gripper_backend_maps_close_target_to_grasp_action():
+    driver = FakeRosGripperDriver()
+    settings = RosGripperActionSettings(close_width_threshold=0.001, grasp_epsilon_inner=0.002, grasp_epsilon_outer=0.08)
+    backend = FrankaRosGripperOnlyBackend(settings, driver=driver)
+
+    backend.move_gripper(width=0.0, velocity=0.02, force_limit=7.0)
+
+    assert driver.calls == [("grasp", 0.0, 0.02, 7.0, 0.002, 0.08)]
+
+
+def test_franka_ros_gripper_backend_maps_open_target_to_move_action():
+    driver = FakeRosGripperDriver()
+    settings = RosGripperActionSettings(max_gripper_width=0.078, close_width_threshold=0.001)
+    backend = FrankaRosGripperOnlyBackend(settings, driver=driver)
+
+    backend.move_gripper(width=0.078, velocity=0.05, force_limit=7.0)
+
+    assert driver.calls == [("move", 0.078, 0.05)]
+
+
+def test_franka_ros_gripper_backend_stop_uses_driver_stop():
+    driver = FakeRosGripperDriver()
+    backend = FrankaRosGripperOnlyBackend(RosGripperActionSettings(), driver=driver)
+
+    backend.stop_gripper()
+
+    assert driver.calls == [("stop",)]

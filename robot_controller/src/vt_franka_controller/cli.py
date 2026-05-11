@@ -10,7 +10,7 @@ from .backends.gripper_only import PolymetisGripperOnlyBackend
 from .backends.polymetis import PolymetisFrankaBackend
 from .control.gripper_service import GripperTestbedService
 from .control.service import ControllerService
-from .settings import ControllerSettings
+from .settings import ControlSettings, ControllerSettings, RosGripperTestbedSettings, TeleopGripperDefaults
 
 
 def build_backend(settings: ControllerSettings):
@@ -28,11 +28,38 @@ def build_backend(settings: ControllerSettings):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="VT Franka controller CLI")
-    parser.add_argument("command", choices=["run", "home", "ready", "gripper-testbed"], help="Command to execute")
+    parser.add_argument(
+        "command",
+        choices=["run", "home", "ready", "gripper-testbed", "ros-gripper-testbed"],
+        help="Command to execute",
+    )
     parser.add_argument("--config", default="config/controller.yaml", help="Path to YAML config")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if args.command == "ros-gripper-testbed":
+        try:
+            import uvicorn
+            from .api.gripper_testbed_app import create_gripper_testbed_app
+            from .backends.franka_ros_gripper import FrankaRosGripperOnlyBackend
+        except ImportError as exc:
+            raise RuntimeError("Failed to import FastAPI/uvicorn for 'vt-franka-controller ros-gripper-testbed'.") from exc
+        settings = load_yaml_model(args.config, RosGripperTestbedSettings)
+        backend = FrankaRosGripperOnlyBackend(settings.ros)
+        service_settings = ControllerSettings(
+            server=settings.server,
+            control=ControlSettings(control_frequency_hz=settings.control_frequency_hz),
+            teleop=TeleopGripperDefaults(
+                max_gripper_width=settings.ros.max_gripper_width,
+                gripper_velocity=settings.ros.default_velocity,
+                grasp_force=settings.ros.default_force_limit,
+            ),
+        )
+        service = GripperTestbedService(service_settings, backend)
+        app = create_gripper_testbed_app(service)
+        uvicorn.run(app, host=settings.server.host, port=settings.server.port)
+        return
+
     settings = load_yaml_model(args.config, ControllerSettings)
     if args.command == "gripper-testbed":
         try:
@@ -40,10 +67,13 @@ def main() -> None:
             from .api.gripper_testbed_app import create_gripper_testbed_app
         except ImportError as exc:
             raise RuntimeError("Failed to import FastAPI/uvicorn for 'vt-franka-controller gripper-testbed'.") from exc
-        backend = MockFrankaBackend() if settings.backend.kind == "mock" else PolymetisGripperOnlyBackend(
-            gripper_ip=settings.backend.gripper_ip,
-            gripper_port=settings.backend.gripper_port,
-        )
+        if settings.backend.kind == "mock":
+            backend = MockFrankaBackend()
+        else:
+            backend = PolymetisGripperOnlyBackend(
+                gripper_ip=settings.backend.gripper_ip,
+                gripper_port=settings.backend.gripper_port,
+            )
         service = GripperTestbedService(settings, backend)
         app = create_gripper_testbed_app(service)
         uvicorn.run(app, host=settings.server.host, port=settings.server.port)

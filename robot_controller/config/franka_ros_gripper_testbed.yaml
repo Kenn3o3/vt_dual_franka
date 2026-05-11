@@ -1,0 +1,19 @@
+server:
+  host: 0.0.0.0
+  port: 8094
+
+control_frequency_hz: 60.0
+
+ros:
+  action_namespace: /franka_gripper
+  joint_states_topic: /franka_gripper/joint_states
+  max_gripper_width: 0.078
+  close_width_threshold: 0.001
+  default_velocity: 0.05
+  default_force_limit: 7.0
+  grasp_epsilon_inner: 0.001
+  grasp_epsilon_outer: 0.08
+  action_server_timeout_sec: 2.0
+  action_result_timeout_sec: 10.0
+  state_stale_after_sec: 1.0
+  home_on_start: false
