@@ -8,7 +8,23 @@ conda activate vt-franka-workspace
 cd /home/zhenya/kenny/visuotact/vt_franka
 ```
 
-我用这个command采集数据：
+用 USB 连接 Meta Quest 到电脑
+
+```bash
+adb devices
+adb reverse tcp:8082 tcp:8082
+adb shell settings put global stay_on_while_plugged_in 3
+adb shell am broadcast -a com.oculus.vrpowermanager.prox_close --ei timeout 0
+adb shell setprop debug.oculus.guardian_pause 1
+```
+
+In the Quest TactAR app, set the workstation IP to:
+
+```text
+127.0.0.1
+```
+
+用这个command采集数据：
 ```bash
 vt-franka-workspace collect \
   --workspace-config robot_workspace/config/workspace.yaml \
