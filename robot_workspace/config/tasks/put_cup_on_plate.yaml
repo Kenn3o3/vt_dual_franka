@@ -1,6 +1,11 @@
 task_name: put_cup_on_plate
 initial_eef_pose_xyz_rpy_deg: [0.0, 0.45, 0.5, 180.0, 0.0, 45.0]
 initial_move_duration_sec: 2.0
+home_joint_positions_rad: [1.2096, 0.1493, 0.287, -1.4945, -0.0111, 1.6255, 0.7401]
+home_joint_duration_sec: 4.0
+home_joint_tolerance_rad: 0.05
+gripper_forever_closed: false
+rand_init_pose: [0.0, 0.0, 0.0]
 
 collection:
   controller_state_poll_hz: 60.0
@@ -17,7 +22,6 @@ collection:
 modality:
   proprioception: true
   rgb_cameras: [wrist, third_person]
-  gelsight_markers: false
   gelsight_frame: false
   controller_state_max_age_sec: 2.0
   rgb_camera_max_age_sec: 2.0
@@ -61,10 +65,9 @@ gelsight:
   fps: 15
   width: 640
   height: 480
-  exposure: -6
-  contrast: 100
-  marker_dimension: 2
-  marker_vis_rotation_deg: 0.0
-  vis_latency_steps: 5
+  apply_controls: false
+  exposure: null
+  contrast: 32
   save_frames: false
   record_hz: 0.0
+  buffered_recording: false

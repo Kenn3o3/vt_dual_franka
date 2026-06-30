@@ -13,6 +13,7 @@ from vt_franka_shared.models import Arrow, ControllerState, ForceSensorMessage, 
 from vt_franka_shared.pose_math import pose7d_to_matrix
 from vt_franka_shared.transforms import SingleArmCalibration
 
+from ..recording.image_io import ensure_hwc_uint8_rgb
 from ..settings import QuestImageStreamSettings
 
 LOGGER = logging.getLogger(__name__)
@@ -86,8 +87,9 @@ class QuestUdpPublisher:
             max_width=settings.max_width,
             max_height=settings.max_height,
         )
+        prepared_bgr = cv2.cvtColor(prepared, cv2.COLOR_RGB2BGR)
         encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), int(np.clip(settings.quality, 1, 100))]
-        ok, encoded = cv2.imencode(".jpg", prepared, encode_param)
+        ok, encoded = cv2.imencode(".jpg", prepared_bgr, encode_param)
         if not ok:
             raise RuntimeError(f"Failed to JPEG-encode Quest image stream {settings.image_id}")
 
@@ -138,9 +140,7 @@ def _encode_bson(payload: dict) -> bytes:
 
 def _prepare_image_for_quest(image: np.ndarray, *, max_width: int, max_height: int) -> np.ndarray:
     cv2 = _require_cv2()
-    array = np.asarray(image)
-    if array.ndim != 3 or array.shape[2] != 3:
-        raise ValueError("Quest image streaming expects an HxWx3 image array")
+    array = ensure_hwc_uint8_rgb(image)
     if max_width <= 0 or max_height <= 0:
         return array
     height, width = array.shape[:2]

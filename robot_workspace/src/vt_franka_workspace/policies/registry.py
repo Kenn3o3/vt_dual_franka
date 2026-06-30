@@ -18,4 +18,8 @@ def resolve_policy(
         from .mpd.policy import MPDPolicy
 
         return MPDPolicy.from_config(policy_config, inference_config, workspace)
+    if policy_type in {"visuotactile", "vt", "univtac"}:
+        from .visuotactile.policy import VisuotactilePolicy
+
+        return VisuotactilePolicy.from_config(policy_config, inference_config, workspace)
     raise ValueError(f"Unsupported policy type: {policy_config.type!r}")

@@ -11,6 +11,7 @@ import numpy as np
 from vt_franka_shared.models import ControllerState
 
 from ..config import ModalitySettings
+from ..recording.image_io import write_rgb_image
 from ..runtime.live_buffer import LiveSample, LiveSampleBuffer
 
 
@@ -21,16 +22,18 @@ class ObservationAssembler:
         modality: ModalitySettings,
         state_provider,
         rgb_camera_buffers: dict[str, LiveSampleBuffer] | None = None,
-        gelsight_marker_buffer: LiveSampleBuffer | None = None,
         gelsight_frame_buffer: LiveSampleBuffer | None = None,
         image_format: str = "jpg",
+        record_rgb_frames: bool = False,
+        record_gelsight_frames: bool = True,
     ) -> None:
         self.modality = modality
         self.state_provider = state_provider
         self.rgb_camera_buffers = dict(rgb_camera_buffers or {})
-        self.gelsight_marker_buffer = gelsight_marker_buffer
         self.gelsight_frame_buffer = gelsight_frame_buffer
         self.image_format = image_format
+        self.record_rgb_frames = bool(record_rgb_frames)
+        self.record_gelsight_frames = bool(record_gelsight_frames)
 
     def assert_ready(self) -> tuple[bool, list[str]]:
         reasons: list[str] = []
@@ -41,8 +44,6 @@ class ObservationAssembler:
                 reasons.append(f"proprioception unavailable: {exc}")
         for role in self.modality.rgb_cameras:
             self._check_buffer(self.rgb_camera_buffers.get(role), self.modality.rgb_camera_max_age_sec, f"images.{role}", reasons)
-        if self.modality.gelsight_markers:
-            self._check_buffer(self.gelsight_marker_buffer, self.modality.gelsight_max_age_sec, "tactile.gelsight_markers", reasons)
         if self.modality.gelsight_frame:
             self._check_buffer(self.gelsight_frame_buffer, self.modality.gelsight_max_age_sec, "tactile.gelsight_frame", reasons)
         return not reasons, reasons
@@ -65,7 +66,11 @@ class ObservationAssembler:
         image_records: dict[str, Any] = {}
         for role in self.modality.rgb_cameras:
             sample = self._required_sample(self.rgb_camera_buffers.get(role), self.modality.rgb_camera_max_age_sec, f"images.{role}")
-            rel_path = self._write_frame(episode_dir, sample.name, sample, step_index) if episode_dir is not None and step_index is not None else None
+            rel_path = (
+                self._write_frame(episode_dir, sample.name, sample, step_index)
+                if self.record_rgb_frames and episode_dir is not None and step_index is not None
+                else None
+            )
             observation["images"][role] = {
                 "image": sample.data,
                 "metadata": dict(sample.metadata),
@@ -76,29 +81,20 @@ class ObservationAssembler:
             recorded["images"] = image_records
 
         tactile_records: dict[str, Any] = {}
-        if self.modality.gelsight_markers:
-            sample = self._required_sample(self.gelsight_marker_buffer, self.modality.gelsight_max_age_sec, "tactile.gelsight_markers")
-            observation["tactile"]["gelsight_markers"] = {
-                "marker_locations": sample.data["marker_locations"],
-                "marker_offsets": sample.data["marker_offsets"],
-                "metadata": dict(sample.metadata),
-                "captured_wall_time": sample.captured_wall_time,
-            }
-            tactile_records["gelsight_markers"] = {
-                "captured_wall_time": sample.captured_wall_time,
-                "marker_locations": _json_safe(sample.data["marker_locations"]),
-                "marker_offsets": _json_safe(sample.data["marker_offsets"]),
-                "metadata": _json_safe(sample.metadata),
-            }
-
         if self.modality.gelsight_frame:
             sample = self._required_sample(self.gelsight_frame_buffer, self.modality.gelsight_max_age_sec, "tactile.gelsight_frame")
-            rel_path = self._write_frame(episode_dir, "gelsight_frame", sample, step_index) if episode_dir is not None and step_index is not None else None
-            observation["tactile"]["gelsight_frame"] = {
+            rel_path = (
+                self._write_frame(episode_dir, "gelsight_frame", sample, step_index)
+                if self.record_gelsight_frames and episode_dir is not None and step_index is not None
+                else None
+            )
+            tactile_item = {
                 "image": sample.data,
                 "metadata": dict(sample.metadata),
                 "captured_wall_time": sample.captured_wall_time,
             }
+            observation["tactile"]["tactile_left"] = tactile_item
+            observation["tactile"]["gelsight_frame"] = tactile_item
             tactile_records["gelsight_frame"] = self._recorded_image_sample(sample, rel_path)
         if tactile_records:
             recorded["tactile"] = tactile_records
@@ -122,18 +118,10 @@ class ObservationAssembler:
         return buffer.get_latest(max_age_sec=max_age_sec)
 
     def _write_frame(self, episode_dir: Path, stream_name: str, sample: LiveSample, step_index: int) -> str:
-        try:
-            import cv2
-        except ImportError as exc:  # pragma: no cover - runtime dependency
-            raise RuntimeError("OpenCV is required to record policy observation images") from exc
-
         frame_dir = episode_dir / "streams" / stream_name
         frame_dir.mkdir(parents=True, exist_ok=True)
         frame_path = frame_dir / f"step_{step_index:06d}.{self.image_format}"
-        success, encoded = cv2.imencode(f".{self.image_format}", sample.data)
-        if not success:
-            raise RuntimeError(f"Failed to encode {stream_name} frame")
-        frame_path.write_bytes(encoded.tobytes())
+        write_rgb_image(frame_path, sample.data, quality=90)
         return frame_path.relative_to(episode_dir).as_posix()
 
     @staticmethod

@@ -6,11 +6,11 @@ controller_request_timeout_sec: 0.3
 loop_hz: 60.0
 command_hz: 20.0
 trigger_enable_button_index: 4
-min_gripper_width: 0.0
+min_gripper_width: 0.002
 max_gripper_width: 0.078
 open_velocity: 0.05
-close_velocity: 0.02
-force_threshold: 7.0
+close_velocity: 0.005
+force_threshold: 20.0
 trigger_pressed_threshold: 0.2
 control_hand: right
 width_gamma: 1.5

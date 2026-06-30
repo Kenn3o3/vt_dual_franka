@@ -12,6 +12,8 @@ from vt_franka_workspace.teleop.quest_server import QuestTeleopService, create_t
 class FakeController:
     def __init__(self):
         self.tcp_targets = []
+        self.gripper_moves = []
+        self.gripper_grasps = []
 
     def get_state(self):
         return ControllerState(tcp_pose=[0.4, 0.0, 0.3, 1.0, 0.0, 0.0, 0.0])
@@ -21,11 +23,11 @@ class FakeController:
         self.tcp_targets.append(target_tcp)
 
     def move_gripper(self, width, velocity, force_limit, source="test", blocking=False):
-        del blocking
+        self.gripper_moves.append((width, velocity, force_limit, source, blocking))
         return None
 
     def grasp_gripper(self, velocity, force_limit, source="test", blocking=False):
-        del blocking
+        self.gripper_grasps.append((velocity, force_limit, source, blocking))
         return None
 
     def stop_gripper(self):
@@ -121,6 +123,8 @@ def test_teleop_app_can_mount_operator_routes():
                 "reasons": ["blocked"],
                 "allowed_actions": {
                     "reset": True,
+                    "confirm_gripper_closed": False,
+                    "open_gripper": False,
                     "start": False,
                     "stop": False,
                     "mark_success": False,
@@ -138,6 +142,12 @@ def test_teleop_app_can_mount_operator_routes():
             return None
 
         def operator_reset_ready_pose(self):
+            return None
+
+        def operator_confirm_gripper_closed(self):
+            return None
+
+        def operator_open_gripper(self):
             return None
 
         def operator_start_episode(self):
@@ -164,3 +174,57 @@ def test_teleop_app_can_mount_operator_routes():
 
     assert response.status_code == 200
     assert response.json()["mode"] == "collect"
+
+
+def test_teleop_forever_closed_records_closed_and_suppresses_open():
+    calibration = SingleArmCalibration.from_dir(
+        "/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/calibration/v6"
+    )
+    controller = FakeController()
+    records = []
+
+    class FakeCommandRecorder:
+        def record_event(self, payload, event_time=None):
+            del event_time
+            records.append(payload)
+
+    service = QuestTeleopService(
+        TeleopSettings(relative_translation_scale=1.0),
+        controller,
+        calibration,
+        command_recorder=FakeCommandRecorder(),
+        state_provider=lambda: ControllerState(tcp_pose=[0.4, 0.0, 0.3, 1.0, 0.0, 0.0, 0.0]),
+        gripper_forever_closed=True,
+    )
+    service.set_teleop_enabled(True)
+    service._tracking = True
+    service._start_real_tcp = np.array([0.4, 0.0, 0.3, 1.0, 0.0, 0.0, 0.0])
+    service._start_hand_tcp = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0])
+    message = type(
+        "Message",
+        (),
+        {
+            "leftHand": type(
+                "Hand",
+                (),
+                {
+                    "wristPos": [0.0, 0.0, 0.0],
+                    "wristQuat": [1.0, 0.0, 0.0, 0.0],
+                    "triggerState": 0.0,
+                    "buttonState": [False, False, False, False, True],
+                },
+            )()
+        },
+    )()
+
+    service._handle_gripper_toggle(message)
+    target_pose = service._calculate_relative_target(np.array(message.leftHand.wristPos + message.leftHand.wristQuat))
+    controller.queue_tcp(target_pose.tolist(), source="teleop")
+    service.command_recorder.record_event(
+        {"source_wall_time": 1.0, "target_tcp": target_pose.tolist(), "gripper_closed": service._gripper_closed}
+    )
+
+    assert service._gripper_closed is True
+    assert controller.gripper_moves == []
+    assert len(controller.gripper_grasps) == 1
+    assert records[-1]["gripper_closed"] is True

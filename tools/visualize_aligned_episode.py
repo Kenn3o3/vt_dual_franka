@@ -68,7 +68,8 @@ def render_video(
     try:
         robot_pose = _pose7_to_xyz_rpy(np.asarray(data["robot_tcp_pose"], dtype=np.float64))
         action_pose = _pose7_to_xyz_rpy(np.asarray(data["teleop_target_tcp"], dtype=np.float64))
-        rgb_streams = _load_rgb_streams(data)
+        image_streams = _load_rgb_streams(data)
+        image_streams.extend(_load_raw_image_streams(episode_dir, timestamps, existing_names={name for name, _ in image_streams}))
         gripper_width = np.asarray(data["gripper_width"], dtype=np.float64) if "gripper_width" in data else None
         teleop_gripper_closed = (
             np.asarray(data["teleop_gripper_closed"], dtype=bool) if "teleop_gripper_closed" in data else None
@@ -83,7 +84,7 @@ def render_video(
                     manifest=manifest,
                     index=index,
                     timestamps=timestamps,
-                    rgb_streams=rgb_streams,
+                    rgb_streams=image_streams,
                     robot_pose=robot_pose,
                     action_pose=action_pose,
                     gripper_width=gripper_width,
@@ -139,11 +140,85 @@ def _load_rgb_streams(data: np.lib.npyio.NpzFile) -> list[tuple[str, np.ndarray]
     for key in sorted(data.files):
         if key.endswith("_frame_paths"):
             name = key[: -len("_frame_paths")]
-            streams.append((name, np.asarray(data[key], dtype=object)))
+            frame_paths = np.asarray(data[key], dtype=object)
+            index_key = f"{name}_frame_indices"
+            if index_key in data:
+                frame_indices = np.asarray(data[index_key], dtype=np.int64)
+                frame_refs = np.asarray(
+                    [
+                        "" if not str(path) else {"frame_path": str(path), "index_in_chunk": int(frame_indices[index])}
+                        for index, path in enumerate(frame_paths)
+                    ],
+                    dtype=object,
+                )
+                streams.append((name, frame_refs))
+            else:
+                streams.append((name, frame_paths))
     preferred = ["rgb_third_person", "rgb_wrist"]
     ordered = [item for name in preferred for item in streams if item[0] == name]
     ordered.extend(item for item in streams if item[0] not in preferred)
     return ordered
+
+
+def _load_raw_image_streams(
+    episode_dir: Path,
+    timestamps: np.ndarray,
+    *,
+    existing_names: set[str],
+) -> list[tuple[str, np.ndarray]]:
+    streams: list[tuple[str, np.ndarray]] = []
+    candidates = [
+        ("gelsight", "gelsight_frames"),
+    ]
+    for display_name, stream_name in candidates:
+        if display_name in existing_names or stream_name in existing_names:
+            continue
+        stream_path = episode_dir / "streams" / f"{stream_name}.jsonl"
+        if not stream_path.exists():
+            continue
+        stream = _align_raw_frame_stream(stream_path, timestamps)
+        if stream is not None:
+            streams.append((display_name, stream))
+    return streams
+
+
+def _align_raw_frame_stream(stream_path: Path, timestamps: np.ndarray) -> np.ndarray | None:
+    frame_times: list[float] = []
+    frame_refs: list[dict[str, object]] = []
+    with stream_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            frame_path = record.get("frame_path")
+            if not frame_path:
+                continue
+            metadata = record.get("metadata") or {}
+            timestamp = metadata.get("captured_wall_time", record.get("captured_wall_time", record.get("recorded_at_wall_time")))
+            if timestamp is None:
+                continue
+            frame_times.append(float(timestamp))
+            frame_refs.append({"frame_path": str(frame_path), "index_in_chunk": int(record.get("index_in_chunk", -1))})
+    if not frame_times:
+        return None
+
+    order = np.argsort(np.asarray(frame_times, dtype=np.float64))
+    sorted_times = np.asarray(frame_times, dtype=np.float64)[order]
+    sorted_refs = np.asarray(frame_refs, dtype=object)[order]
+    aligned_refs: list[dict[str, object] | str] = []
+    for timestamp in timestamps:
+        right = int(np.searchsorted(sorted_times, float(timestamp), side="left"))
+        candidates = []
+        if right > 0:
+            candidates.append(right - 1)
+        if right < len(sorted_times):
+            candidates.append(right)
+        if not candidates:
+            aligned_refs.append("")
+            continue
+        best = min(candidates, key=lambda idx: abs(float(sorted_times[idx]) - float(timestamp)))
+        aligned_refs.append(sorted_refs[best])
+    return np.asarray(aligned_refs, dtype=object)
 
 
 def _infer_aligned_fps(timestamps: np.ndarray, manifest: dict) -> float:
@@ -269,8 +344,8 @@ def _draw_header(cv2, canvas: np.ndarray, *, episode_name: str, index: int, time
 
 def _draw_rgb_stack(cv2, canvas: np.ndarray, *, episode_dir: Path, rgb_streams: list[tuple[str, np.ndarray]], index: int, x: int, y: int, width: int, height: int) -> None:
     if not rgb_streams:
-        _draw_panel(cv2, canvas, x, y, width, height, "RGB")
-        cv2.putText(canvas, "No RGB streams in aligned_episode.npz", (x + 20, y + 58), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (80, 80, 80), 2, cv2.LINE_AA)
+        _draw_panel(cv2, canvas, x, y, width, height, "Images")
+        cv2.putText(canvas, "No image streams found", (x + 20, y + 58), cv2.FONT_HERSHEY_SIMPLEX, 0.72, (80, 80, 80), 2, cv2.LINE_AA)
         return
     panel_gap = 14
     panel_h = (height - panel_gap * (len(rgb_streams) - 1)) // len(rgb_streams)
@@ -349,10 +424,25 @@ def _draw_panel(cv2, canvas: np.ndarray, x: int, y: int, width: int, height: int
 
 
 def _read_frame(cv2, episode_dir: Path, frame_paths: np.ndarray, index: int) -> np.ndarray | None:
-    rel_path = str(frame_paths[index])
+    frame_ref = frame_paths[index]
+    if isinstance(frame_ref, dict):
+        rel_path = str(frame_ref.get("frame_path", ""))
+        index_in_chunk = int(frame_ref.get("index_in_chunk", -1))
+    else:
+        rel_path = str(frame_ref)
+        index_in_chunk = -1
     if not rel_path:
         return None
-    return cv2.imread(str(episode_dir / rel_path), cv2.IMREAD_COLOR)
+    path = episode_dir / rel_path
+    if path.suffix.lower() == ".npz":
+        if index_in_chunk < 0:
+            return None
+        with np.load(path) as chunk:
+            frames = chunk["frames"]
+            if index_in_chunk >= len(frames):
+                return None
+            return np.asarray(frames[index_in_chunk])
+    return cv2.imread(str(path), cv2.IMREAD_COLOR)
 
 
 def _fit_image(cv2, image: np.ndarray, width: int, height: int) -> np.ndarray:
@@ -363,6 +453,8 @@ def _fit_image(cv2, image: np.ndarray, width: int, height: int) -> np.ndarray:
 
 
 def _stream_label(stream_name: str) -> str:
+    if stream_name == "gelsight":
+        return "GelSight"
     label = stream_name.removeprefix("rgb_").replace("_", " ").strip()
     return label.title() if label else stream_name
 

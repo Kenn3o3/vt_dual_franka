@@ -5,13 +5,14 @@ max_duration_sec: 30.0
 start_countdown_sec: 2.0
 status_print_hz: 1.0
 task_name: replay
-initial_eef_pose_xyz_rpy_deg: [0.0, 0.45, 0.5, 180.0, 0.0, 45.0]
+initial_eef_pose_xyz_rpy_deg: [0.06, 0.6, 0.55, 180.0, 0.0, 45.0]
 initial_move_duration_sec: 2.0
+gripper_forever_closed: true
+rand_init_pose: [0.0, 0.0, 0.0]
 
 modality:
   proprioception: true
   rgb_cameras: []
-  gelsight_markers: false
   gelsight_frame: false
   controller_state_max_age_sec: 2.0
   rgb_camera_max_age_sec: 2.0
@@ -19,7 +20,8 @@ modality:
 
 eval:
   enabled: true
-  cameras: [third]
+  cameras: []
+  stream_cameras: [third]
   video_hz: 10.0
 
 rgb_cameras:
@@ -50,4 +52,4 @@ rgb_cameras:
     save_frames: true
     record_hz: 15.0
 gelsight:
-  enabled: false
+  enabled: true

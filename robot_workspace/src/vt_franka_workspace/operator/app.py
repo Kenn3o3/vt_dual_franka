@@ -36,9 +36,12 @@ def create_operator_app(
         if snapshot is None:
             return Response(status_code=404)
         media_type, payload = _encode_snapshot(snapshot.image, snapshot.image_format)
-        return Response(content=payload, media_type=media_type)
+        return Response(content=payload, media_type=media_type, headers={"Cache-Control": "no-store"})
 
+    _register_action(app, "/operator/api/actions/reset-home-joints", controller.operator_reset_home_joints)
     _register_action(app, "/operator/api/actions/reset", controller.operator_reset_ready_pose)
+    _register_action(app, "/operator/api/actions/confirm-gripper-closed", controller.operator_confirm_gripper_closed)
+    _register_action(app, "/operator/api/actions/open-gripper", controller.operator_open_gripper)
     _register_action(app, "/operator/api/actions/start", controller.operator_start_episode)
     _register_action(app, "/operator/api/actions/stop", controller.operator_stop_episode)
     _register_action(app, "/operator/api/actions/success", controller.operator_mark_episode_success)
@@ -399,7 +402,10 @@ _OPERATOR_PAGE = """<!doctype html>
       <section class="panel">
         <h2>Actions</h2>
         <div class="actions">
+          <button id="resetHomeJointsButton" onclick="invokeAction('reset-home-joints')">Home Joints <kbd>J</kbd></button>
           <button id="resetButton" onclick="invokeAction('reset')">Reset Pose <kbd>H</kbd></button>
+          <button id="closeGripperButton" class="secondary" onclick="invokeAction('confirm-gripper-closed')">Close Gripper <kbd>C</kbd></button>
+          <button id="openGripperButton" class="secondary" onclick="invokeAction('open-gripper')">Open Gripper <kbd>O</kbd></button>
           <button id="startButton" class="secondary" onclick="invokeAction('start')">Start Episode <kbd>R</kbd></button>
           <button id="stopButton" onclick="invokeAction('stop')">Stop / Save <kbd>E</kbd></button>
           <button id="successButton" class="secondary" onclick="invokeAction('success')">Mark Success <kbd>S</kbd></button>
@@ -420,10 +426,10 @@ _OPERATOR_PAGE = """<!doctype html>
       </section>
 
       <section class="panel">
-        <h2>Pre-Episode Snapshot</h2>
+        <h2>Pre-Episode Wrist Preview</h2>
         <div class="snapshot">
-          <img id="snapshotImage" alt="RGB camera snapshot">
-          <div id="snapshotEmpty" class="snapshot-empty">A frozen RGB snapshot will appear here when the next episode is allowed to start.</div>
+          <img id="snapshotImage" alt="Wrist camera preview">
+          <div id="snapshotEmpty" class="snapshot-empty">A live wrist preview will appear here before R when the wrist camera is producing fresh frames.</div>
           <div id="snapshotCaption" class="snapshot-caption"></div>
         </div>
         <div>
@@ -440,7 +446,8 @@ _OPERATOR_PAGE = """<!doctype html>
   </main>
 
   <script>
-    let lastSnapshotToken = null;
+    let latestStatus = null;
+    let previewTimer = null;
 
     async function fetchJson(path, options = undefined) {
       const response = await fetch(path, options);
@@ -453,7 +460,9 @@ _OPERATOR_PAGE = """<!doctype html>
 
     async function refreshStatus() {
       const status = await fetchJson('/operator/api/status');
+      latestStatus = status;
       renderStatus(status);
+      updatePreviewTimer(status);
       await refreshSnapshot(status);
     }
 
@@ -471,45 +480,86 @@ _OPERATOR_PAGE = """<!doctype html>
       panel.scrollTop = panel.scrollHeight;
     }
 
-    function selectSnapshot(status) {
-      const snapshots = status.snapshots || {};
-      const preferredRoles = ['third_person', 'wrist'];
-      for (const role of preferredRoles) {
-        if (snapshots[role] && snapshots[role].available) {
-          return { role, snapshot: snapshots[role] };
-        }
-      }
-      for (const [role, snapshot] of Object.entries(snapshots)) {
-        if (snapshot && snapshot.available) {
-          return { role, snapshot };
-        }
-      }
-      return null;
+    function selectPreview(status) {
+      const preview = status.preview || null;
+      if (!preview || !preview.streaming || !preview.available || !preview.role) return null;
+      return preview;
     }
 
     async function refreshSnapshot(status) {
-      const selected = selectSnapshot(status);
+      const preview = selectPreview(status);
       const image = document.getElementById('snapshotImage');
       const empty = document.getElementById('snapshotEmpty');
       const caption = document.getElementById('snapshotCaption');
-      if (!selected) {
-        lastSnapshotToken = null;
-        image.classList.remove('visible');
-        image.removeAttribute('src');
-        empty.style.display = 'block';
-        caption.classList.remove('visible');
-        caption.textContent = '';
+      if (!preview) {
+        clearPreview();
         return;
       }
-      const { role, snapshot } = selected;
-      if (snapshot.token !== lastSnapshotToken) {
-        image.src = `/operator/api/snapshot/${encodeURIComponent(role)}?token=${encodeURIComponent(snapshot.token)}`;
-        lastSnapshotToken = snapshot.token;
+      const token = preview.token || `${Date.now()}`;
+      const url = `/operator/api/snapshot/${encodeURIComponent(preview.role)}?token=${encodeURIComponent(token)}&t=${Date.now()}`;
+      try {
+        const response = await fetch(url, { cache: 'no-store' });
+        if (!response.ok) {
+          clearPreview();
+          return;
+        }
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const previousUrl = image.dataset.objectUrl;
+        image.src = objectUrl;
+        image.dataset.objectUrl = objectUrl;
+        if (previousUrl) URL.revokeObjectURL(previousUrl);
+      } catch (error) {
+        console.error(error);
+        clearPreview();
+        return;
       }
       image.classList.add('visible');
       empty.style.display = 'none';
-      caption.textContent = snapshot.label || `Frozen ${role} view`;
+      caption.textContent = preview.label || `Live ${preview.role} view`;
       caption.classList.add('visible');
+    }
+
+    function clearPreview() {
+      const image = document.getElementById('snapshotImage');
+      const empty = document.getElementById('snapshotEmpty');
+      const caption = document.getElementById('snapshotCaption');
+      image.classList.remove('visible');
+      image.removeAttribute('src');
+      if (image.dataset.objectUrl) {
+        URL.revokeObjectURL(image.dataset.objectUrl);
+        delete image.dataset.objectUrl;
+      }
+      empty.style.display = 'block';
+      caption.classList.remove('visible');
+      caption.textContent = '';
+    }
+
+    function updatePreviewTimer(status) {
+      const preview = selectPreview(status);
+      if (!preview) {
+        if (previewTimer !== null) {
+          clearInterval(previewTimer);
+          previewTimer = null;
+        }
+        clearPreview();
+        return;
+      }
+      if (previewTimer !== null) return;
+      const refreshHz = Math.max(0.5, Number(preview.refresh_hz || 5.0));
+      previewTimer = setInterval(async () => {
+        if (!latestStatus || !selectPreview(latestStatus)) {
+          clearInterval(previewTimer);
+          previewTimer = null;
+          clearPreview();
+          return;
+        }
+        try {
+          await refreshSnapshot(latestStatus);
+        } catch (error) {
+          console.error(error);
+        }
+      }, Math.max(100, 1000 / refreshHz));
     }
 
     function renderStatus(status) {
@@ -561,8 +611,12 @@ _OPERATOR_PAGE = """<!doctype html>
       if (status.latest_saved_episode_name) {
         details.push(renderDetail('Latest Saved', status.latest_saved_episode_name));
       }
-      if (status.preview_note) {
-        details.push(renderDetail('Snapshot', status.preview_note));
+      if (status.preview) {
+        const previewState = status.preview.streaming ? 'live' : 'off';
+        details.push(renderDetail('Wrist Preview', `${previewState} (${status.preview.role || 'n/a'})`));
+      }
+      if (typeof status.home_joint_completed === 'boolean') {
+        details.push(renderDetail('Home Joints', status.home_joint_completed ? 'reset done' : 'optional'));
       }
       const controller = status.controller_state || {};
       details.push(renderDetail('Controller Samples', `${controller.sample_count || 0}`));
@@ -575,7 +629,10 @@ _OPERATOR_PAGE = """<!doctype html>
     }
 
     function renderActions(allowed) {
+      document.getElementById('resetHomeJointsButton').disabled = !allowed.reset_home_joints;
       document.getElementById('resetButton').disabled = !allowed.reset;
+      document.getElementById('closeGripperButton').disabled = !allowed.confirm_gripper_closed;
+      document.getElementById('openGripperButton').disabled = !allowed.open_gripper;
       document.getElementById('startButton').disabled = !allowed.start;
       document.getElementById('stopButton').disabled = !allowed.stop;
       document.getElementById('successButton').disabled = !allowed.mark_success;
@@ -619,7 +676,10 @@ _OPERATOR_PAGE = """<!doctype html>
     setInterval(refreshAll, 1000);
 
     const HOTKEYS = {
+      j: { action: 'reset-home-joints', confirm: false, buttonId: 'resetHomeJointsButton' },
       h: { action: 'reset', confirm: false, buttonId: 'resetButton' },
+      c: { action: 'confirm-gripper-closed', confirm: false, buttonId: 'closeGripperButton' },
+      o: { action: 'open-gripper', confirm: false, buttonId: 'openGripperButton' },
       r: { action: 'start', confirm: false, buttonId: 'startButton' },
       e: { action: 'stop', confirm: false, buttonId: 'stopButton' },
       s: { action: 'success', confirm: false, buttonId: 'successButton' },

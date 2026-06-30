@@ -1,0 +1,9 @@
+type: visuotactile
+checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/usb_insertion/act_univtac
+config:
+  model: act_univtac
+  policy_name: act_univtac_temporal_agg
+  task_name: usb_insertion
+  device: cuda
+  act_temporal_agg: true
+  act_temporal_agg_k: 0.01

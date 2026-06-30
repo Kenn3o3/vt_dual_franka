@@ -10,13 +10,13 @@ teleop:
   tracking_button_index: 4
   trigger_close_threshold: 0.5
   relative_translation_scale: 1.0
-  relative_rotation_scale: 0.3
+  relative_rotation_scale: 0.8
   max_tracking_position_error_m: 0.3
   operator_yaw_offset_deg: 180.0
   use_force_control_for_gripper: true
   max_gripper_width: 0.078
   min_gripper_width: 0.0
-  grasp_force: 7.0
+  grasp_force: 20.0
   gripper_velocity: 0.1
   gripper_stability_window: 30
   gripper_force_close_threshold: 15.0
@@ -38,6 +38,7 @@ quest_feedback:
 recording:
   enabled: true
   collect_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/collect
+  preprocess1_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/preprocess1
   prepared_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/prepared
   train_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/train
   eval_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/eval
@@ -50,6 +51,8 @@ operator_ui:
   port: 8083
   log_buffer_size: 1000
   snapshot_max_age_sec: 1.5
+  preview_camera_role: wrist
+  preview_refresh_hz: 5.0
 
 calibration:
   calibration_dir: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/calibration/v6

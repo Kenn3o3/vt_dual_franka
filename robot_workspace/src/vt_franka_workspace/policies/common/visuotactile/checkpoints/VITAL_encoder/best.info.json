@@ -1,0 +1,5 @@
+{
+  "best_checkpoint_prefix": "best_",
+  "best_epoch": 199,
+  "best_test_loss": 0.6840174198150635
+}

@@ -65,9 +65,16 @@ def normalize_action_chunk(raw_actions: Any) -> list[Action]:
 
 
 class ActionExecutor:
-    def __init__(self, controller: ActionController, *, blocking_gripper: bool = True) -> None:
+    def __init__(
+        self,
+        controller: ActionController,
+        *,
+        blocking_gripper: bool = True,
+        force_gripper_closed: bool = False,
+    ) -> None:
         self.controller = controller
         self.blocking_gripper = blocking_gripper
+        self.force_gripper_closed = bool(force_gripper_closed)
         self._last_gripper_closed: bool | None = None
         self._last_gripper_width: float | None = None
 
@@ -76,6 +83,10 @@ class ActionExecutor:
         self._last_gripper_width = None
 
     def execute(self, action: Action, *, source: str = "policy_runner") -> None:
+        executed_action = self.normalize_for_execution(action)
+        self.execute_normalized(executed_action, source=source)
+
+    def execute_normalized(self, action: Action, *, source: str = "policy_runner") -> None:
         self._execute_gripper(action, source=source)
         if action.target_tcp is not None:
             self.controller.queue_tcp(
@@ -83,6 +94,19 @@ class ActionExecutor:
                 source=source,
                 target_duration_sec=action.target_duration_sec,
             )
+
+    def normalize_for_execution(self, action: Action) -> Action:
+        if not self.force_gripper_closed:
+            return action
+        metadata = dict(action.metadata)
+        metadata["force_gripper_closed"] = True
+        return action.model_copy(
+            update={
+                "gripper_closed": True,
+                "gripper_width": None,
+                "metadata": metadata,
+            }
+        )
 
     def _execute_gripper(self, action: Action, *, source: str) -> None:
         if action.gripper_closed is True and self._last_gripper_closed is not True:

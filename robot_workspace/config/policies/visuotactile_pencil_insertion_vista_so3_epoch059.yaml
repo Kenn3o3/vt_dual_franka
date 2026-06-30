@@ -1,0 +1,7 @@
+type: visuotactile
+checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/pencil_insertion/vista_so3
+config:
+  model: vista_so3
+  task_name: pencil_insertion
+  device: cuda
+  checkpoint_file: epoch=059.ckpt

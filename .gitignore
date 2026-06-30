@@ -28,3 +28,4 @@ venv/
 /robot_workspace/data
 /UNTOUCHED_REFERENCE
 /openpi
+/robot_workspace/src/vt_franka_workspace/policies/common/visuotactile/checkpoints/

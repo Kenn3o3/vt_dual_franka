@@ -63,6 +63,34 @@ class QuestImageStreamSettings(BaseModel):
     max_publish_hz: float = 12.0
 
 
+class Preprocess1RecordingSettings(BaseModel):
+    enabled: bool = True
+    profile_name: str = "real_canonical_v1"
+    target_hz: float = 10.0
+    canonical_size: int = 480
+    chunk_frames: int = 64
+    queue_size: int = 4
+    save_raw_gelsight_frames: bool = False
+    save_raw_wrist_frames: bool = True
+    wrist_raw_jpeg_compat: bool = True
+    gelsight_crop_box: tuple[int, int, int, int] | None = None
+    gelsight_margin_fraction: float = 0.0
+
+    @field_validator("canonical_size", "chunk_frames", "queue_size")
+    @classmethod
+    def _validate_positive_int(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("preprocess1 recording sizes must be positive")
+        return value
+
+    @field_validator("target_hz")
+    @classmethod
+    def _validate_positive_float(cls, value: float) -> float:
+        if value <= 0.0:
+            raise ValueError("preprocess1 target_hz must be positive")
+        return value
+
+
 class GelsightSettings(BaseModel):
     enabled: bool = False
     camera_name: str = "left_gripper_camera_1"
@@ -73,17 +101,25 @@ class GelsightSettings(BaseModel):
     fps: int = 15
     width: int = 640
     height: int = 480
-    exposure: int | None = -6
-    contrast: int | None = 100
-    marker_dimension: int = 2
-    marker_vis_rotation_deg: float = 0.0
-    vis_latency_steps: int = 5
+    apply_controls: bool = False
+    exposure: int | None = None
+    contrast: int | None = 32
     teleop_status_host: str = "127.0.0.1"
     teleop_status_port: int = 8082
     save_frames: bool = False
     record_hz: float = 0.0
+    buffered_recording: bool = False
+    buffer_max_frames: int = 900
+    buffer_chunk_frames: int = 100
+    buffer_overflow_policy: Literal["fail_episode"] = "fail_episode"
     quest_stream: QuestImageStreamSettings = Field(default_factory=QuestImageStreamSettings)
-    quest_overlay_arrow_scale: float = 12.0
+
+    @field_validator("buffer_max_frames", "buffer_chunk_frames")
+    @classmethod
+    def _validate_positive_buffer_size(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("GelSight buffer sizes must be positive")
+        return value
 
 
 class RgbCameraSettings(BaseModel):
@@ -105,6 +141,7 @@ class RgbCameraSettings(BaseModel):
 class RecordingSettings(BaseModel):
     enabled: bool = True
     collect_root: Path = Path("./data/collect")
+    preprocess1_root: Path = Path("./data/preprocess1")
     prepared_root: Path = Path("./data/prepared")
     train_root: Path = Path("./data/train")
     eval_root: Path = Path("./data/eval")
@@ -118,6 +155,23 @@ class OperatorUiSettings(BaseModel):
     port: int = 8083
     log_buffer_size: int = 1000
     snapshot_max_age_sec: float = 1.5
+    preview_camera_role: str = "wrist"
+    preview_refresh_hz: float = 5.0
+
+    @field_validator("preview_camera_role")
+    @classmethod
+    def _normalize_preview_camera_role(cls, value: str) -> str:
+        role = str(value).strip()
+        if not role:
+            raise ValueError("operator_ui.preview_camera_role must be non-empty")
+        return role
+
+    @field_validator("snapshot_max_age_sec", "preview_refresh_hz")
+    @classmethod
+    def _validate_positive_preview_float(cls, value: float) -> float:
+        if value <= 0.0:
+            raise ValueError("operator UI preview timing values must be positive")
+        return value
 
 
 class CalibrationSettings(BaseModel):
@@ -136,25 +190,61 @@ class WorkspaceSettings(BaseModel):
 class ModalitySettings(BaseModel):
     proprioception: bool = True
     rgb_cameras: list[str] = Field(default_factory=list)
-    gelsight_markers: bool = False
+    gelsight_markers: bool = Field(default=False, exclude=True)
     gelsight_frame: bool = False
     controller_state_max_age_sec: float = 2.0
     rgb_camera_max_age_sec: float = 2.0
     gelsight_max_age_sec: float = 2.0
 
+    @field_validator("gelsight_markers")
+    @classmethod
+    def _reject_gelsight_markers(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("GelSight marker modality has been removed; use gelsight_frame instead")
+        return value
+
     def needs_gelsight(self) -> bool:
-        return self.gelsight_markers or self.gelsight_frame
+        return self.gelsight_frame
 
 
 class EvalRuntimeSettings(BaseModel):
     enabled: bool = True
-    cameras: list[str] = Field(default_factory=lambda: ["third_person"])
+    cameras: list[str] = Field(default_factory=list)
+    stream_cameras: list[str] = Field(default_factory=list)
     video_hz: float = 10.0
 
     @field_validator("cameras")
     @classmethod
     def _normalize_cameras(cls, value: list[str]) -> list[str]:
-        aliases = {"third": "third_person", "third_person": "third_person", "wrist": "wrist"}
+        aliases = {
+            "wrist": "wrist",
+            "gelsight": "gelsight",
+            "gelsight_frame": "gelsight",
+            "tactile": "gelsight",
+        }
+        normalized: list[str] = []
+        for camera in value:
+            for item in camera.replace(",", "+").split("+"):
+                key = item.strip().lower()
+                if not key:
+                    continue
+                if key in {"third", "third_person"}:
+                    raise ValueError("third_person eval video must be configured under eval.stream_cameras")
+                if key not in aliases:
+                    supported = ", ".join(sorted([*aliases, "wrist+gelsight"]))
+                    raise ValueError(f"Unsupported eval camera {camera!r}. Supported cameras: {supported}")
+                role = aliases[key]
+                if role not in normalized:
+                    normalized.append(role)
+        return normalized
+
+    @field_validator("stream_cameras")
+    @classmethod
+    def _normalize_stream_cameras(cls, value: list[str]) -> list[str]:
+        aliases = {
+            "third": "third_person",
+            "third_person": "third_person",
+        }
         normalized: list[str] = []
         for camera in value:
             for item in camera.replace(",", "+").split("+"):
@@ -162,8 +252,8 @@ class EvalRuntimeSettings(BaseModel):
                 if not key:
                     continue
                 if key not in aliases:
-                    supported = ", ".join(sorted([*aliases, "wrist+third"]))
-                    raise ValueError(f"Unsupported eval camera {camera!r}. Supported cameras: {supported}")
+                    supported = ", ".join(sorted([*aliases, "third"]))
+                    raise ValueError(f"Unsupported eval stream camera {camera!r}. Supported cameras: {supported}")
                 role = aliases[key]
                 if role not in normalized:
                     normalized.append(role)
@@ -177,6 +267,44 @@ class EvalRuntimeSettings(BaseModel):
         return value
 
 
+class ModelInputRecordingSettings(BaseModel):
+    enabled: bool = False
+    streams: list[str] = Field(default_factory=lambda: ["rgb_wrist", "gelsight"])
+    format: Literal["png", "jpg", "jpeg"] = "png"
+    save_npz: bool = True
+
+    @field_validator("streams")
+    @classmethod
+    def _normalize_streams(cls, value: list[str]) -> list[str]:
+        aliases = {
+            "wrist": "rgb_wrist",
+            "rgb_wrist": "rgb_wrist",
+            "gelsight": "gelsight",
+            "gelsight_frame": "gelsight",
+            "tactile": "gelsight",
+        }
+        normalized: list[str] = []
+        for stream in value:
+            for item in stream.replace(",", "+").split("+"):
+                key = item.strip().lower()
+                if not key:
+                    continue
+                if key not in aliases:
+                    supported = ", ".join(sorted([*aliases, "wrist+gelsight"]))
+                    raise ValueError(f"Unsupported model input recording stream {stream!r}. Supported streams: {supported}")
+                canonical = aliases[key]
+                if canonical not in normalized:
+                    normalized.append(canonical)
+        if not normalized:
+            raise ValueError("model_input_recording.streams must include at least one stream")
+        return normalized
+
+    @field_validator("format", mode="before")
+    @classmethod
+    def _normalize_format(cls, value: str) -> str:
+        return str(value).strip().lower().lstrip(".")
+
+
 class CollectionRuntimeSettings(BaseModel):
     controller_state_poll_hz: float = 60.0
     quest_message_timeout_sec: float = 2.0
@@ -188,12 +316,19 @@ class CollectionRuntimeSettings(BaseModel):
     initial_pose_tolerance_deg: float = 10.0
     initial_pose_settle_timeout_sec: float = 8.0
     initial_pose_settle_dwell_sec: float = 0.3
+    preprocess1_recording: Preprocess1RecordingSettings = Field(default_factory=Preprocess1RecordingSettings)
 
 
 class TaskConfig(BaseModel):
     task_name: str
     initial_eef_pose_xyz_rpy_deg: list[float]
     initial_move_duration_sec: float = 2.0
+    home_joint_positions_rad: list[float] | None = None
+    home_joint_duration_sec: float = 4.0
+    home_joint_tolerance_rad: float = 0.03
+    home_joint_settle_timeout_sec: float = 8.0
+    gripper_forever_closed: bool = False
+    rand_init_pose: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
     modality: ModalitySettings = Field(default_factory=ModalitySettings)
     collection: CollectionRuntimeSettings = Field(default_factory=CollectionRuntimeSettings)
     rgb_cameras: dict[str, RgbCameraSettings] = Field(default_factory=dict)
@@ -204,6 +339,29 @@ class TaskConfig(BaseModel):
     def _validate_initial_pose(cls, value: list[float]) -> list[float]:
         if len(value) != 6:
             raise ValueError("initial_eef_pose_xyz_rpy_deg must contain exactly 6 values")
+        return value
+
+    @field_validator("home_joint_positions_rad")
+    @classmethod
+    def _validate_home_joint_positions(cls, value: list[float] | None) -> list[float] | None:
+        if value is not None and len(value) != 7:
+            raise ValueError("home_joint_positions_rad must contain exactly 7 values")
+        return value
+
+    @field_validator("home_joint_duration_sec", "home_joint_tolerance_rad", "home_joint_settle_timeout_sec")
+    @classmethod
+    def _validate_positive_home_joint_float(cls, value: float) -> float:
+        if value <= 0.0:
+            raise ValueError("home joint timing and tolerance values must be positive")
+        return value
+
+    @field_validator("rand_init_pose")
+    @classmethod
+    def _validate_rand_init_pose(cls, value: list[float]) -> list[float]:
+        if len(value) != 3:
+            raise ValueError("rand_init_pose must contain exactly 3 xyz range values")
+        if any(item < 0.0 for item in value):
+            raise ValueError("rand_init_pose values must be non-negative")
         return value
 
 
@@ -217,8 +375,15 @@ class InferenceRuntimeSettings(BaseModel):
     task_name: str = "policy_run"
     initial_eef_pose_xyz_rpy_deg: list[float] | None = None
     initial_move_duration_sec: float = 2.0
+    home_joint_positions_rad: list[float] | None = None
+    home_joint_duration_sec: float = 4.0
+    home_joint_tolerance_rad: float = 0.03
+    home_joint_settle_timeout_sec: float = 8.0
+    gripper_forever_closed: bool = False
+    rand_init_pose: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
     modality: ModalitySettings = Field(default_factory=ModalitySettings)
     eval: EvalRuntimeSettings = Field(default_factory=EvalRuntimeSettings)
+    model_input_recording: ModelInputRecordingSettings = Field(default_factory=ModelInputRecordingSettings)
     rgb_cameras: dict[str, RgbCameraSettings] = Field(default_factory=dict)
     gelsight: GelsightSettings = Field(default_factory=GelsightSettings)
     controller_state_poll_hz: float = 60.0
@@ -239,6 +404,29 @@ class InferenceRuntimeSettings(BaseModel):
     def _validate_optional_initial_pose(cls, value: list[float] | None) -> list[float] | None:
         if value is not None and len(value) != 6:
             raise ValueError("initial_eef_pose_xyz_rpy_deg must contain exactly 6 values")
+        return value
+
+    @field_validator("home_joint_positions_rad")
+    @classmethod
+    def _validate_optional_home_joint_positions(cls, value: list[float] | None) -> list[float] | None:
+        if value is not None and len(value) != 7:
+            raise ValueError("home_joint_positions_rad must contain exactly 7 values")
+        return value
+
+    @field_validator("home_joint_duration_sec", "home_joint_tolerance_rad", "home_joint_settle_timeout_sec")
+    @classmethod
+    def _validate_positive_home_joint_float(cls, value: float) -> float:
+        if value <= 0.0:
+            raise ValueError("home joint timing and tolerance values must be positive")
+        return value
+
+    @field_validator("rand_init_pose")
+    @classmethod
+    def _validate_rand_init_pose(cls, value: list[float]) -> list[float]:
+        if len(value) != 3:
+            raise ValueError("rand_init_pose must contain exactly 3 xyz range values")
+        if any(item < 0.0 for item in value):
+            raise ValueError("rand_init_pose values must be non-negative")
         return value
 
 

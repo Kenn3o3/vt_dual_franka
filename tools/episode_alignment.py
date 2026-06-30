@@ -23,7 +23,7 @@ def align_episode(
     streams_dir = episode_dir / "streams"
     controller_records = _read_jsonl(streams_dir / "controller_state.jsonl")
     teleop_records = [record for record in _read_jsonl(streams_dir / "teleop_commands.jsonl") if record.get("target_tcp") is not None]
-    gelsight_records = _read_jsonl(streams_dir / "gelsight_markers.jsonl")
+    gelsight_frame_records = _read_jsonl(streams_dir / "gelsight_frames.jsonl")
     rgb_streams = _discover_rgb_streams(streams_dir)
 
     if not controller_records:
@@ -43,7 +43,7 @@ def align_episode(
     # Use receive time for alignment to stay in the same clock domain as teleop.
     controller_times = _timestamp_array(controller_records, "received_wall_time")
     teleop_times = _timestamp_array(teleop_records, "source_wall_time")
-    gelsight_times = _timestamp_array(gelsight_records, "captured_wall_time")
+    gelsight_frame_times = _timestamp_array(gelsight_frame_records, "captured_wall_time")
     rgb_times = {name: _timestamp_array(records, "captured_wall_time") for name, records in rgb_streams.items()}
 
     start_time = max(float(controller_times[0]), float(teleop_times[0]))
@@ -66,10 +66,11 @@ def align_episode(
     teleop_gripper_closed: list[bool] = []
     teleop_source_timestamps: list[float] = []
     teleop_action_lead_sec: list[float] = []
-    gelsight_marker_locations: list[Any] = []
-    gelsight_marker_offsets: list[Any] = []
+    gelsight_frame_paths: list[str] = []
+    gelsight_frame_indices: list[int] = []
     gelsight_capture_timestamps: list[float] = []
     rgb_frame_paths: dict[str, list[str]] = {name: [] for name in rgb_streams}
+    rgb_frame_indices: dict[str, list[int]] = {name: [] for name in rgb_streams}
     rgb_capture_timestamps: dict[str, list[float]] = {name: [] for name in rgb_streams}
     dropped_without_future_action = 0
     dropped_action_outside_horizon = 0
@@ -106,23 +107,25 @@ def align_episode(
         teleop_source_timestamps.append(teleop_time)
         teleop_action_lead_sec.append(float(action_lead_sec))
 
-        gelsight_item, gelsight_time = _latest_record(gelsight_records, gelsight_times, timestamp)
+        gelsight_item, gelsight_time = _latest_record(gelsight_frame_records, gelsight_frame_times, timestamp)
         if gelsight_item is None:
-            gelsight_marker_locations.append([])
-            gelsight_marker_offsets.append([])
+            gelsight_frame_paths.append("")
+            gelsight_frame_indices.append(-1)
             gelsight_capture_timestamps.append(np.nan)
         else:
-            gelsight_marker_locations.append(gelsight_item.get("marker_locations", []))
-            gelsight_marker_offsets.append(gelsight_item.get("marker_offsets", []))
+            gelsight_frame_paths.append(str(gelsight_item.get("frame_path", "")))
+            gelsight_frame_indices.append(int(gelsight_item.get("index_in_chunk", -1)))
             gelsight_capture_timestamps.append(gelsight_time)
 
         for stream_name, records in rgb_streams.items():
             rgb_item, rgb_time = _latest_record(records, rgb_times[stream_name], timestamp)
             if rgb_item is None:
                 rgb_frame_paths[stream_name].append("")
+                rgb_frame_indices[stream_name].append(-1)
                 rgb_capture_timestamps[stream_name].append(np.nan)
             else:
                 rgb_frame_paths[stream_name].append(str(rgb_item.get("frame_path", "")))
+                rgb_frame_indices[stream_name].append(int(rgb_item.get("index_in_chunk", -1)))
                 rgb_capture_timestamps[stream_name].append(rgb_time)
 
     if not aligned_timestamps:
@@ -131,6 +134,7 @@ def align_episode(
     rgb_arrays: dict[str, np.ndarray] = {}
     for stream_name in rgb_streams:
         rgb_arrays[f"{stream_name}_frame_paths"] = np.asarray(rgb_frame_paths[stream_name], dtype=object)
+        rgb_arrays[f"{stream_name}_frame_indices"] = np.asarray(rgb_frame_indices[stream_name], dtype=np.int64)
         rgb_arrays[f"{stream_name}_capture_timestamps"] = np.asarray(rgb_capture_timestamps[stream_name], dtype=np.float64)
 
     np.savez_compressed(
@@ -151,14 +155,14 @@ def align_episode(
         teleop_gripper_closed=np.asarray(teleop_gripper_closed, dtype=bool),
         teleop_command_source_timestamps=np.asarray(teleop_source_timestamps, dtype=np.float64),
         teleop_action_lead_sec=np.asarray(teleop_action_lead_sec, dtype=np.float64),
-        gelsight_marker_locations=np.asarray(gelsight_marker_locations, dtype=object),
-        gelsight_marker_offsets=np.asarray(gelsight_marker_offsets, dtype=object),
+        gelsight_frame_paths=np.asarray(gelsight_frame_paths, dtype=object),
+        gelsight_frame_indices=np.asarray(gelsight_frame_indices, dtype=np.int64),
         gelsight_capture_timestamps=np.asarray(gelsight_capture_timestamps, dtype=np.float64),
         **rgb_arrays,
     )
 
     manifest = {
-        "schema_version": "vt_franka_aligned_episode_v1",
+        "schema_version": "vt_franka_aligned_episode_v2",
         "target_hz": target_hz,
         "num_steps": int(len(aligned_timestamps)),
         "grid_steps": int(len(grid)),
@@ -168,7 +172,7 @@ def align_episode(
         "action_horizon_sec": action_horizon_sec,
         "dropped_steps_without_future_action": int(dropped_without_future_action),
         "dropped_steps_action_outside_horizon": int(dropped_action_outside_horizon),
-        "streams_used": _streams_used(controller_records, teleop_records, gelsight_records, rgb_streams),
+        "streams_used": _streams_used(controller_records, teleop_records, gelsight_frame_records, rgb_streams),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return output_path
@@ -238,7 +242,7 @@ def _discover_rgb_streams(streams_dir: Path) -> dict[str, list[dict[str, Any]]]:
     streams: dict[str, list[dict[str, Any]]] = {}
     for path in sorted(streams_dir.glob("*.jsonl")):
         stream_name = path.stem
-        if stream_name in {"controller_state", "teleop_commands", "quest_messages", "gelsight_markers", "gelsight_frames"}:
+        if stream_name in {"controller_state", "teleop_commands", "quest_messages", "gelsight_frames"}:
             continue
         records = _read_jsonl(path)
         if records and "frame_path" in records[0] and "captured_wall_time" in records[0]:
@@ -249,7 +253,7 @@ def _discover_rgb_streams(streams_dir: Path) -> dict[str, list[dict[str, Any]]]:
 def _streams_used(
     controller_records: list[dict[str, Any]],
     teleop_records: list[dict[str, Any]],
-    gelsight_records: list[dict[str, Any]],
+    gelsight_frame_records: list[dict[str, Any]],
     rgb_streams: dict[str, list[dict[str, Any]]],
 ) -> list[str]:
     streams = []
@@ -257,8 +261,8 @@ def _streams_used(
         streams.append("controller_state")
     if teleop_records:
         streams.append("teleop_commands")
-    if gelsight_records:
-        streams.append("gelsight_markers")
+    if gelsight_frame_records:
+        streams.append("gelsight_frames")
     streams.extend(name for name, records in rgb_streams.items() if records)
     return streams
 

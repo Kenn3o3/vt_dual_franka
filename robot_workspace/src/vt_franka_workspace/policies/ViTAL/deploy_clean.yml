@@ -1,0 +1,4 @@
+policy_name: policy.ViTAL.deploy_clean_policy
+seed: 0
+instruction_type: seen
+instuction_file: null

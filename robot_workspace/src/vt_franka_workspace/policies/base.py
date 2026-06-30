@@ -9,6 +9,9 @@ class Policy(ABC):
     def predict(self, observation_window: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Return a chunk of executable action dictionaries."""
 
+    def ensure_loaded(self) -> None:
+        return None
+
     def reset(self) -> None:
         return None
 

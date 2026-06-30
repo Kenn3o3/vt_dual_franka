@@ -109,6 +109,9 @@ class MPDPolicy(Policy):
     def close(self) -> None:
         self.backend.close()
 
+    def ensure_loaded(self) -> None:
+        self.backend.ensure_loaded()
+
     def predict(self, observation_window: list[dict[str, Any]]) -> list[dict[str, Any]]:
         states = self._states_from_observation_window(observation_window)
         required = set(self.backend.runtime_spec.required_history_keys)
@@ -300,6 +303,9 @@ class HydraMPDBackend:
 
     def close(self) -> None:
         self._agent = None
+
+    def ensure_loaded(self) -> None:
+        self._ensure_loaded()
 
     def _ensure_loaded(self) -> None:
         if self._agent is not None:

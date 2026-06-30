@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass, field
 from typing import Protocol
 
 import numpy as np
 from scipy.spatial.transform import Rotation
 
+from vt_franka_shared.models import ResetCommand
 from vt_franka_shared.pose_math import pose7d_to_pose6d
 
 
@@ -14,9 +16,50 @@ class TcpMotionController(Protocol):
         ...
 
 
+class JointResetController(Protocol):
+    def reset(self, command: ResetCommand) -> dict:
+        ...
+
+
 class StateProvider(Protocol):
     def get_state(self, max_age_sec: float | None = None):
         ...
+
+
+@dataclass(frozen=True)
+class RandomizedInitialPose:
+    base_pose_xyz_rpy_deg: list[float]
+    pose_xyz_rpy_deg: list[float]
+    delta_xyz_m: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+
+    def metadata(self) -> dict[str, list[float]]:
+        return {
+            "base_pose_xyz_rpy_deg": list(self.base_pose_xyz_rpy_deg),
+            "pose_xyz_rpy_deg": list(self.pose_xyz_rpy_deg),
+            "delta_xyz_m": list(self.delta_xyz_m),
+        }
+
+
+def sample_randomized_initial_pose(
+    base_pose_xyz_rpy_deg: list[float],
+    rand_xyz_range_m: list[float] | None,
+) -> RandomizedInitialPose:
+    if len(base_pose_xyz_rpy_deg) != 6:
+        raise ValueError("base initial EEF pose must be [x, y, z, roll_deg, pitch_deg, yaw_deg]")
+    ranges = [0.0, 0.0, 0.0] if rand_xyz_range_m is None else list(rand_xyz_range_m)
+    if len(ranges) != 3:
+        raise ValueError("rand_init_pose must contain exactly 3 xyz range values")
+    if any(value < 0.0 for value in ranges):
+        raise ValueError("rand_init_pose values must be non-negative")
+    delta = np.random.uniform(-np.asarray(ranges, dtype=np.float64), np.asarray(ranges, dtype=np.float64))
+    pose = [float(value) for value in base_pose_xyz_rpy_deg]
+    for index in range(3):
+        pose[index] += float(delta[index])
+    return RandomizedInitialPose(
+        base_pose_xyz_rpy_deg=[float(value) for value in base_pose_xyz_rpy_deg],
+        pose_xyz_rpy_deg=pose,
+        delta_xyz_m=[float(value) for value in delta],
+    )
 
 
 def eef_xyz_rpy_deg_to_tcp_pose(pose_xyz_rpy_deg: list[float]) -> list[float]:
@@ -59,6 +102,60 @@ def move_to_eef_pose(
         state_max_age_sec=state_max_age_sec,
     )
     return target_tcp
+
+
+def move_to_home_joints(
+    *,
+    controller: JointResetController,
+    state_provider: StateProvider,
+    joint_positions: list[float],
+    duration_sec: float,
+    source: str,
+    tolerance_rad: float,
+    settle_timeout_sec: float,
+    state_max_age_sec: float = 2.0,
+) -> dict:
+    target_joints = [float(value) for value in joint_positions]
+    if len(target_joints) != 7:
+        raise ValueError("home joint reset target must contain exactly 7 values")
+    command = ResetCommand(
+        profile="task_home_joint",
+        joint_positions=target_joints,
+        joint_duration_sec=max(float(duration_sec), 1e-3),
+        gripper_target="unchanged",
+        source=source,
+    )
+    result = controller.reset(command)
+    _wait_for_joint_positions(
+        state_provider=state_provider,
+        target_joints=target_joints,
+        tolerance_rad=tolerance_rad,
+        timeout_sec=settle_timeout_sec + max(float(duration_sec), 0.0),
+        state_max_age_sec=state_max_age_sec,
+    )
+    return result
+
+
+def _wait_for_joint_positions(
+    *,
+    state_provider: StateProvider,
+    target_joints: list[float],
+    tolerance_rad: float,
+    timeout_sec: float,
+    state_max_age_sec: float,
+) -> None:
+    target = np.asarray(target_joints, dtype=np.float64)
+    deadline = time.monotonic() + max(float(timeout_sec), 0.0)
+    last_error: float | None = None
+    while time.monotonic() <= deadline:
+        state = state_provider.get_state(max_age_sec=state_max_age_sec)
+        current = np.asarray(state.joint_positions, dtype=np.float64)
+        if current.shape == target.shape:
+            last_error = float(np.max(np.abs(current - target)))
+            if last_error <= tolerance_rad:
+                return
+        time.sleep(0.05)
+    raise RuntimeError(f"Home joint reset did not settle within timeout; max_error_rad={last_error}")
 
 
 def _wait_for_tcp_pose(

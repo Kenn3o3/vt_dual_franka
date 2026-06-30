@@ -30,7 +30,16 @@ class SupportsOperatorUi(Protocol):
     def get_operator_snapshot(self, name: str) -> OperatorSnapshot | None:
         ...
 
+    def operator_reset_home_joints(self) -> None:
+        ...
+
     def operator_reset_ready_pose(self) -> None:
+        ...
+
+    def operator_confirm_gripper_closed(self) -> None:
+        ...
+
+    def operator_open_gripper(self) -> None:
         ...
 
     def operator_start_episode(self) -> None:

@@ -7,10 +7,14 @@ from threading import Event
 from typing import Any
 
 from ...runtime.live_buffer import LiveSampleBuffer
+from ...recording.async_image_stream import AsyncImageStreamRecorder
+from ...recording.canonical_preprocess1 import CanonicalPreprocess1StreamRecorder
+from ...recording.episode_streams import EpisodeImageStreamRecorder
 from ...recording.raw_recorder import JsonlStreamRecorder
 from ...publishers.quest_udp import QuestUdpPublisher
 from ...settings import RgbCameraSettings
 from .frame_decoder import decode_color_frame
+from ..standardization import standardize_camera_frame
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +23,10 @@ class OrbbecRgbRecorder:
     def __init__(
         self,
         settings: RgbCameraSettings,
-        recorder: JsonlStreamRecorder | None = None,
+        recorder: JsonlStreamRecorder | AsyncImageStreamRecorder | None = None,
+        canonical_recorder: CanonicalPreprocess1StreamRecorder | None = None,
+        episode_image_recorder: EpisodeImageStreamRecorder | None = None,
+        stream_video_recorder: Any | None = None,
         live_buffer: LiveSampleBuffer | None = None,
         quest_publisher: QuestUdpPublisher | None = None,
         image_format: str = "jpg",
@@ -27,6 +34,9 @@ class OrbbecRgbRecorder:
     ) -> None:
         self.settings = settings
         self.recorder = recorder
+        self.canonical_recorder = canonical_recorder
+        self.episode_image_recorder = episode_image_recorder
+        self.stream_video_recorder = stream_video_recorder
         self.live_buffer = live_buffer
         self.quest_publisher = quest_publisher
         self.image_format = image_format
@@ -147,27 +157,66 @@ class OrbbecRgbRecorder:
             "color_format": str(_safe_call(color_frame, "get_format") or self.settings.color_format),
         }
 
+        standardized = standardize_camera_frame(
+            image,
+            stream_name=self.settings.stream_name or "rgb_wrist",
+            camera_name=self._device_name or self.settings.camera_name,
+            source_color="BGR",
+            captured_wall_time=captured_wall_time,
+            sequence_id=int(sequence_id) if sequence_id is not None else self._frames_seen,
+            metadata=payload,
+        )
+
         if self.live_buffer is not None:
-            self.live_buffer.update(image.copy(), metadata=payload, captured_wall_time=captured_wall_time)
+            self.live_buffer.update(
+                standardized.image_rgb.copy(),
+                metadata=standardized.metadata,
+                captured_wall_time=captured_wall_time,
+            )
+
+        if self.stream_video_recorder is not None:
+            try:
+                self.stream_video_recorder.record_frame(
+                    standardized.image_rgb,
+                    event_time=captured_wall_time,
+                )
+            except Exception as exc:
+                logger.warning("Failed to enqueue RGB stream video frame for %s: %s", self._device_name, exc)
 
         if self.quest_publisher is not None and self.settings.quest_stream.enabled:
             try:
-                self.quest_publisher.publish_image(image, self.settings.quest_stream)
+                self.quest_publisher.publish_image(standardized.image_rgb, self.settings.quest_stream)
             except Exception as exc:
                 logger.warning("Failed to publish Quest RGB image for %s: %s", self._device_name, exc)
+
+        if self.episode_image_recorder is not None:
+            self.episode_image_recorder.record_frame(
+                standardized.image_rgb,
+                captured_wall_time=captured_wall_time,
+                sequence_id=int(sequence_id) if sequence_id is not None else self._frames_seen,
+                metadata=standardized.metadata,
+            )
 
         if self.recorder is not None:
             if self.settings.save_frames:
                 frame_id = _build_frame_id(captured_wall_time, sequence_id)
                 self.recorder.record_frame(
-                    image,
+                    standardized.image_rgb,
                     frame_id=frame_id,
                     image_format=self.image_format,
-                    extra_event_fields=payload,
+                    extra_event_fields=standardized.metadata,
                     event_time=captured_wall_time,
                 )
             else:
-                self.recorder.record_event(payload, event_time=captured_wall_time)
+                self.recorder.record_event(standardized.metadata, event_time=captured_wall_time)
+
+        if self.canonical_recorder is not None:
+            self.canonical_recorder.record_frame(
+                image,
+                captured_wall_time=captured_wall_time,
+                sequence_id=int(sequence_id if sequence_id is not None else self._frames_seen),
+                metadata=payload,
+            )
 
         self._frames_seen += 1
         now = time.monotonic()

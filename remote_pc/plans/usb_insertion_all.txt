@@ -1,0 +1,2 @@
+usb_insertion
+dp_manifeel dp_equidiff_tact act_univtac vital_act vital_dp vista_so2 vista_so3

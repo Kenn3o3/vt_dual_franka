@@ -1,0 +1,21 @@
+{
+  "experiment_name": "MIDFOV_EXPERIMENT",
+  "tasks": [
+    "grasp_classify",
+    "insert_HDMI",
+    "insert_hole",
+    "insert_tube",
+    "lift_bottle",
+    "lift_can",
+    "pull_out_key",
+    "put_bottle_in_shelf"
+  ],
+  "n_demo": 100,
+  "epochs": 400,
+  "batch_size": 256,
+  "n_clip_images": 3,
+  "min_distance": 5,
+  "seed": 0,
+  "output_dir": "/home/zlkenny/kenny/visuotact/UniVTAC/checkpoints/VITAL_encoder",
+  "device": "cuda:0"
+}

@@ -15,10 +15,18 @@ from ..controller.client import ControllerClient
 from ..operator import ManagedUvicornServer, OperatorActionError, OperatorLogBuffer, OperatorSnapshot, create_operator_app
 from ..publishers.quest_udp import QuestUdpPublisher
 from ..publishers.state_bridge import StateBridge
-from ..recording import JsonlStreamRecorder, RunSessionManager
+from ..recording import (
+    EpisodeImageStreamRecorder,
+    JsonlStreamRecorder,
+    RunSessionManager,
+    analyze_episode_quality,
+    build_expected_episode_hz,
+    episode_qc_manifest_summary,
+    format_episode_qc_summary,
+)
 from ..runtime.keys import KeyReader
 from ..runtime.live_buffer import LiveSampleBuffer
-from ..runtime.motion import move_to_eef_pose
+from ..runtime.motion import RandomizedInitialPose, move_to_eef_pose, move_to_home_joints, sample_randomized_initial_pose
 from ..runtime.workers import ThreadWorker, start_thread_worker, stop_thread_workers
 from ..sensors.rgb_camera import build_rgb_camera_recorder, resolve_rgb_camera_specs
 from ..teleop.quest_server import QuestTeleopService, create_teleop_app
@@ -63,13 +71,18 @@ class DataCollector:
         self.state_bridge: StateBridge | None = None
         self.workers: dict[str, ThreadWorker] = {}
         self.rgb_camera_buffers: dict[str, LiveSampleBuffer] = {}
-        self.frozen_rgb_snapshots: dict[str, OperatorSnapshot] = {}
+        self.gelsight_frame_buffer: LiveSampleBuffer | None = None
+        self.image_stream_recorders: dict[str, EpisodeImageStreamRecorder] = {}
 
         self._operator_lock = threading.RLock()
         self._quit_requested = threading.Event()
         self._current_episode_dir: Path | None = None
         self._latest_saved_episode_dir: Path | None = None
+        self._home_joint_completed = False
         self._initial_pose_completed = False
+        self._pending_initial_gripper_close = False
+        self._current_initial_pose: RandomizedInitialPose | None = None
+        self._current_initial_target_tcp: list[float] | None = None
         self._last_status_print_wall_time = 0.0
 
     def run(self) -> None:
@@ -98,17 +111,31 @@ class DataCollector:
 
     def get_operator_status(self) -> dict:
         with self._operator_lock:
+            self._poll_worker_failures_locked()
             status = self._build_status_locked()
         self.sessions.write_latest_status(status)
         return status
 
     def get_operator_snapshot(self, name: str) -> OperatorSnapshot | None:
         with self._operator_lock:
-            return self.frozen_rgb_snapshots.get(name)
+            ready, _ = self._is_ready_for_episode_locked()
+            return self._build_live_preview_snapshot_locked(name, ready=ready)
+
+    def operator_reset_home_joints(self) -> None:
+        with self._operator_lock:
+            self._reset_home_joints_locked()
 
     def operator_reset_ready_pose(self) -> None:
         with self._operator_lock:
             self._move_to_initial_pose_locked()
+
+    def operator_confirm_gripper_closed(self) -> None:
+        with self._operator_lock:
+            self._confirm_initial_gripper_closed_locked()
+
+    def operator_open_gripper(self) -> None:
+        with self._operator_lock:
+            self._open_gripper_for_adjustment_locked()
 
     def operator_start_episode(self) -> None:
         with self._operator_lock:
@@ -117,6 +144,12 @@ class DataCollector:
     def operator_stop_episode(self) -> None:
         with self._operator_lock:
             self._stop_episode_locked()
+
+    def operator_mark_episode_success(self) -> None:
+        raise OperatorActionError("Collection episodes do not support success/fail outcome marking.")
+
+    def operator_mark_episode_fail(self) -> None:
+        raise OperatorActionError("Collection episodes do not support success/fail outcome marking.")
 
     def operator_discard_latest_episode(self) -> None:
         with self._operator_lock:
@@ -154,6 +187,7 @@ class DataCollector:
             quest_message_recorder=quest_recorder,
             command_recorder=command_recorder,
             state_provider=state_provider,
+            gripper_forever_closed=self.task.gripper_forever_closed,
         )
         self.teleop_service.set_teleop_enabled(False)
         self.teleop_server = ManagedUvicornServer(
@@ -190,12 +224,23 @@ class DataCollector:
             if role not in rgb_specs:
                 raise RuntimeError(f"Task modality requested RGB camera role not configured: {role}")
             spec = rgb_specs[role]
-            recorder = JsonlStreamRecorder(self.sessions, spec.stream_name, record_hz=spec.settings.record_hz)
             live_buffer = LiveSampleBuffer(spec.stream_name)
             self.rgb_camera_buffers[spec.role] = live_buffer
+            image_recorder = EpisodeImageStreamRecorder(
+                self.sessions,
+                spec.stream_name,
+                record_hz=spec.settings.record_hz,
+                image_format=self.workspace.recording.image_format,
+                jpeg_quality=90,
+            )
+            self.image_stream_recorders[spec.stream_name] = image_recorder
+            rgb_settings = spec.settings.model_copy(update={"save_frames": False})
+            spec = spec.__class__(role=spec.role, stream_name=spec.stream_name, settings=rgb_settings)
             service = build_rgb_camera_recorder(
                 spec,
-                recorder=recorder,
+                recorder=None,
+                canonical_recorder=None,
+                episode_image_recorder=image_recorder,
                 live_buffer=live_buffer,
                 quest_publisher=self.quest_publisher,
                 image_format=self.workspace.recording.image_format,
@@ -212,23 +257,25 @@ class DataCollector:
 
             if not self.task.gelsight.enabled:
                 raise RuntimeError("Task modality requested GelSight, but task.gelsight.enabled is false")
-            marker_recorder = JsonlStreamRecorder(
+            image_recorder = EpisodeImageStreamRecorder(
                 self.sessions,
-                "gelsight_markers",
+                "tactile_left",
                 record_hz=self.task.gelsight.record_hz,
-            )
-            frame_recorder = JsonlStreamRecorder(
-                self.sessions,
-                "gelsight_frames",
-                record_hz=self.task.gelsight.record_hz,
-            )
-            service = GelsightPublisher(
-                self.task.gelsight,
-                self.quest_publisher,
-                marker_recorder=marker_recorder,
-                frame_recorder=frame_recorder,
                 image_format=self.workspace.recording.image_format,
-                gripper_status_provider=self.teleop_service.get_gripper_status,
+                jpeg_quality=90,
+                max_frames=self.task.gelsight.buffer_max_frames if self.task.gelsight.buffered_recording else None,
+            )
+            self.image_stream_recorders["tactile_left"] = image_recorder
+            self.gelsight_frame_buffer = LiveSampleBuffer("gelsight_frame")
+            gelsight_settings = self.task.gelsight.model_copy(update={"save_frames": False})
+            service = GelsightPublisher(
+                gelsight_settings,
+                self.quest_publisher,
+                frame_recorder=None,
+                canonical_recorder=None,
+                episode_image_recorder=image_recorder,
+                frame_buffer=self.gelsight_frame_buffer,
+                image_format=self.workspace.recording.image_format,
             )
             start_thread_worker(
                 self.workers,
@@ -239,6 +286,8 @@ class DataCollector:
 
     def _run_event_loop(self, key_reader: KeyReader) -> None:
         while not self._quit_requested.is_set():
+            with self._operator_lock:
+                self._poll_worker_failures_locked()
             self._print_status_if_needed()
             key = key_reader.read_key(0.1)
             if key is None:
@@ -246,6 +295,12 @@ class DataCollector:
             command = key.lower()
             if command == "h":
                 self._run_terminal_action(self.operator_reset_ready_pose)
+            elif command == "j":
+                self._run_terminal_action(self.operator_reset_home_joints)
+            elif command == "c":
+                self._run_terminal_action(self.operator_confirm_gripper_closed)
+            elif command == "o":
+                self._run_terminal_action(self.operator_open_gripper)
             elif command == "r":
                 self._run_terminal_action(self.operator_start_episode)
             elif command == "e":
@@ -260,6 +315,42 @@ class DataCollector:
             action()
         except OperatorActionError as exc:
             LOGGER.warning("%s", exc)
+
+    def _reset_home_joints_locked(self) -> None:
+        if self._current_episode_dir is not None:
+            raise OperatorActionError("Cannot reset home joints while recording. Stop/save the active episode first.")
+        if self.task.home_joint_positions_rad is None:
+            raise OperatorActionError("Task home_joint_positions_rad is not configured.")
+        if self.teleop_service is not None:
+            self.teleop_service.set_teleop_enabled(False)
+        LOGGER.info("Resetting robot to task home joint positions")
+        try:
+            result = move_to_home_joints(
+                controller=self.controller,
+                state_provider=self.state_monitor,
+                joint_positions=self.task.home_joint_positions_rad,
+                duration_sec=self.task.home_joint_duration_sec,
+                source="data_collector_home_joints",
+                tolerance_rad=self.task.home_joint_tolerance_rad,
+                settle_timeout_sec=self.task.home_joint_settle_timeout_sec,
+                state_max_age_sec=self.task.modality.controller_state_max_age_sec,
+            )
+        except Exception as exc:
+            raise OperatorActionError(f"Failed to reset home joints: {exc}") from exc
+        self._home_joint_completed = True
+        self._initial_pose_completed = False
+        self._pending_initial_gripper_close = False
+        self._current_initial_pose = None
+        self._current_initial_target_tcp = None
+        self.sessions.record_operator_event(
+            "home_joint_reset_completed",
+            {
+                "joint_positions": list(self.task.home_joint_positions_rad),
+                "duration_sec": self.task.home_joint_duration_sec,
+                "result": result,
+            },
+        )
+        LOGGER.info("Home joint reset complete. Press H to move to the task initial EEF pose.")
 
     def _handle_terminal_discard(self, key_reader: KeyReader) -> None:
         with self._operator_lock:
@@ -283,11 +374,12 @@ class DataCollector:
         if self.teleop_service is not None:
             self.teleop_service.set_teleop_enabled(False)
         LOGGER.info("Moving robot to task initial EEF pose")
+        initial_pose = sample_randomized_initial_pose(self.task.initial_eef_pose_xyz_rpy_deg, self.task.rand_init_pose)
         try:
             target_tcp = move_to_eef_pose(
                 controller=self.controller,
                 state_provider=self.state_monitor,
-                pose_xyz_rpy_deg=self.task.initial_eef_pose_xyz_rpy_deg,
+                pose_xyz_rpy_deg=initial_pose.pose_xyz_rpy_deg,
                 duration_sec=self.task.initial_move_duration_sec,
                 source="data_collector_initial_pose",
                 position_tolerance_m=self.task.collection.initial_pose_tolerance_m,
@@ -298,10 +390,82 @@ class DataCollector:
             )
         except Exception as exc:
             raise OperatorActionError(f"Failed to move robot to initial pose: {exc}") from exc
+        self._current_initial_pose = initial_pose
+        self._current_initial_target_tcp = target_tcp
+        self.sessions.record_operator_event(
+            "initial_pose_requested",
+            {
+                "target_tcp": target_tcp,
+                "gripper_forever_closed": self.task.gripper_forever_closed,
+                **initial_pose.metadata(),
+            },
+        )
+        if self.task.gripper_forever_closed:
+            self._initial_pose_completed = False
+            self._pending_initial_gripper_close = True
+            self.sessions.record_operator_event("initial_gripper_close_pending", {"target_tcp": target_tcp})
+            LOGGER.info("Initial pose reached. Press C to close the gripper before starting the episode.")
+            return
+        self._pending_initial_gripper_close = False
         self._initial_pose_completed = True
-        self._clear_snapshot_locked()
-        self.sessions.record_operator_event("initial_pose_requested", {"target_tcp": target_tcp})
         LOGGER.info("Initial pose reached. Ready.")
+
+    def _confirm_initial_gripper_closed_locked(self) -> None:
+        if not self.task.gripper_forever_closed:
+            raise OperatorActionError("gripper_forever_closed is disabled for this task.")
+        if self._current_episode_dir is not None:
+            raise OperatorActionError("Cannot close initial gripper while recording. Stop/save the active episode first.")
+        if self._current_initial_pose is None:
+            raise OperatorActionError("Move to the task initial pose with H before closing the gripper.")
+        LOGGER.info("Closing gripper for forever-closed episode")
+        try:
+            self.controller.grasp_gripper(
+                velocity=self.workspace.teleop.gripper_velocity,
+                force_limit=self.workspace.teleop.grasp_force,
+                source="data_collector_initial_gripper_close",
+                blocking=True,
+            )
+        except Exception as exc:
+            raise OperatorActionError(f"Failed to close initial gripper: {exc}") from exc
+        self._pending_initial_gripper_close = False
+        self._initial_pose_completed = True
+        self.sessions.record_operator_event(
+            "initial_gripper_closed_confirmed",
+            {
+                "target_tcp": self._current_initial_target_tcp,
+                **self._current_initial_pose.metadata(),
+            },
+        )
+        LOGGER.info("Initial gripper closed. Ready.")
+
+    def _open_gripper_for_adjustment_locked(self) -> None:
+        if not self.task.gripper_forever_closed:
+            raise OperatorActionError("gripper_forever_closed is disabled for this task.")
+        if self._current_episode_dir is not None:
+            raise OperatorActionError("Cannot open gripper while recording. Stop/save the active episode first.")
+        if self._current_initial_pose is None:
+            raise OperatorActionError("Move to the task initial pose with H before opening the gripper.")
+        LOGGER.info("Opening gripper for object adjustment. Press C to close/confirm before starting the episode.")
+        try:
+            self.controller.move_gripper(
+                width=self.workspace.teleop.max_gripper_width,
+                velocity=self.workspace.teleop.gripper_velocity,
+                force_limit=self.workspace.teleop.grasp_force,
+                source="data_collector_gripper_adjustment_open",
+                blocking=True,
+            )
+        except Exception as exc:
+            raise OperatorActionError(f"Failed to open gripper for adjustment: {exc}") from exc
+        self._pending_initial_gripper_close = True
+        self._initial_pose_completed = False
+        self.sessions.record_operator_event(
+            "gripper_opened_for_adjustment",
+            {
+                "target_tcp": self._current_initial_target_tcp,
+                "open_width": self.workspace.teleop.max_gripper_width,
+                **self._current_initial_pose.metadata(),
+            },
+        )
 
     def _start_episode_locked(self) -> None:
         ready, reasons = self._is_ready_for_episode_locked()
@@ -321,11 +485,16 @@ class DataCollector:
                 "task_name": self.task.task_name,
                 "modality": self.task.modality.model_dump(mode="json"),
                 "controller_status": self.state_monitor.snapshot(),
+                "initial_pose": None if self._current_initial_pose is None else self._current_initial_pose.metadata(),
+                "initial_target_tcp": self._current_initial_target_tcp,
+                "gripper_forever_closed": self.task.gripper_forever_closed,
             },
         )
         self._current_episode_dir = episode_dir
         self._initial_pose_completed = False
-        self._clear_snapshot_locked()
+        self._pending_initial_gripper_close = False
+        self._current_initial_pose = None
+        self._current_initial_target_tcp = None
         if self.teleop_service is not None:
             self.teleop_service.set_teleop_enabled(True)
         self.sessions.record_operator_event("episode_started", {"episode_dir": str(episode_dir)})
@@ -334,14 +503,79 @@ class DataCollector:
     def _stop_episode_locked(self) -> None:
         if self._current_episode_dir is None:
             raise OperatorActionError("No active episode to stop.")
-        episode_dir = self.sessions.stop_episode(outcome="saved")
+        episode_dir = self._current_episode_dir
+        worker_error = self._required_worker_error()
+        if worker_error is not None:
+            outcome = "failed"
+        else:
+            outcome = "saved"
+        self.sessions.close_active_episode()
         self._current_episode_dir = None
-        self._latest_saved_episode_dir = episode_dir
-        self._clear_snapshot_locked()
+        self._home_joint_completed = False
+        metadata_updates = {}
+        if self.image_stream_recorders:
+            metadata_updates["image_stream_recorders"] = {
+                name: recorder.snapshot() for name, recorder in self.image_stream_recorders.items()
+            }
+        if episode_dir is not None:
+            try:
+                image_stream_summary = self._flush_image_streams_locked(episode_dir)
+            except Exception as exc:
+                outcome = "failed"
+                metadata_updates["image_stream_error"] = str(exc)
+                image_stream_summary = None
+            if image_stream_summary is not None:
+                metadata_updates["image_streams"] = image_stream_summary
+        if worker_error is not None:
+            metadata_updates["failure_reason"] = str(worker_error)
+        self.sessions.finalize_episode(episode_dir, outcome=outcome, metadata_updates=metadata_updates)
+        qc_report = None
+        if outcome == "saved":
+            try:
+                qc_report = self._run_episode_qc_locked(episode_dir)
+                self.sessions.update_episode_metadata(episode_dir, {"episode_qc": episode_qc_manifest_summary(qc_report)})
+            except Exception as exc:
+                LOGGER.exception("Episode QC failed for %s", episode_dir)
+                self.sessions.update_episode_metadata(episode_dir, {"episode_qc_error": str(exc)})
+        self._latest_saved_episode_dir = episode_dir if outcome == "saved" else self._latest_saved_episode_dir
         if self.teleop_service is not None:
-            self.teleop_service.set_teleop_enabled(False)
-        self.sessions.record_operator_event("episode_stopped", {"episode_dir": str(episode_dir), "outcome": "saved"})
-        LOGGER.info("Episode saved: %s", episode_dir)
+            self.teleop_service.set_teleop_enabled(outcome == "saved")
+        self.sessions.record_operator_event("episode_stopped", {"episode_dir": str(episode_dir), "outcome": outcome})
+        LOGGER.info("Episode %s: %s", outcome, episode_dir)
+        if qc_report is not None:
+            print(f"[QC] {episode_dir.name}: {format_episode_qc_summary(qc_report)}", flush=True)
+
+    def _poll_worker_failures_locked(self) -> None:
+        if self._current_episode_dir is None:
+            return
+        if self._required_worker_error() is None:
+            return
+        self._stop_episode_locked()
+
+    def _flush_image_streams_locked(self, episode_dir: Path) -> dict | None:
+        if not self.image_stream_recorders:
+            return None
+        summaries = {}
+        for name, recorder in self.image_stream_recorders.items():
+            summary = recorder.flush_episode(episode_dir)
+            if summary is not None:
+                summaries[name] = summary
+        if not summaries:
+            return None
+        return summaries
+
+    def _run_episode_qc_locked(self, episode_dir: Path) -> dict:
+        return analyze_episode_quality(
+            episode_dir,
+            expected_hz=build_expected_episode_hz(self.workspace, self.task),
+            write=True,
+        )
+
+    def _required_worker_error(self) -> Exception | None:
+        for worker in self.workers.values():
+            if worker.required and worker.error is not None:
+                return worker.error
+        return None
 
     def _discard_latest_episode_locked(self) -> None:
         if self._current_episode_dir is not None:
@@ -362,6 +596,8 @@ class DataCollector:
             reasons.append("controller state is not healthy")
         if not self._initial_pose_completed:
             reasons.append("robot has not been moved to the task initial pose with H")
+        if self._pending_initial_gripper_close:
+            reasons.append("initial gripper close is pending; press C to confirm")
         if self.task.collection.require_quest_connection and (
             self.teleop_service is None
             or not self.teleop_service.has_recent_message(self.task.collection.quest_message_timeout_sec)
@@ -374,7 +610,7 @@ class DataCollector:
 
     def _build_status_locked(self) -> dict:
         ready, reasons = self._is_ready_for_episode_locked()
-        self._update_frozen_snapshot_locked(ready=ready)
+        preview = self._preview_metadata_locked(ready=ready)
         next_episode_index = self.sessions.get_next_episode_index()
         quest_connected = self.teleop_service is not None and self.teleop_service.has_recent_message(
             self.task.collection.quest_message_timeout_sec
@@ -395,60 +631,93 @@ class DataCollector:
             "next_episode_name": f"episode_{next_episode_index:04d}",
             "quest_connected": quest_connected,
             "teleop_enabled": teleop_enabled,
+            "gripper_forever_closed": self.task.gripper_forever_closed,
+            "pending_initial_gripper_close": self._pending_initial_gripper_close,
+            "home_joint_completed": self._home_joint_completed,
             "controller_state": self.state_monitor.snapshot(),
             "rgb_cameras": {role: buffer.snapshot() for role, buffer in self.rgb_camera_buffers.items()},
             "gelsight_enabled": self.task.gelsight.enabled,
+            "gelsight_frame": None if self.gelsight_frame_buffer is None else self.gelsight_frame_buffer.snapshot(),
+            "image_stream_recorders": {
+                name: recorder.snapshot() for name, recorder in self.image_stream_recorders.items()
+            },
             "workers": {
                 name: {"alive": worker.is_alive(), "error": None if worker.error is None else str(worker.error)}
                 for name, worker in self.workers.items()
             },
             "allowed_actions": {
+                "reset_home_joints": self._current_episode_dir is None and self.task.home_joint_positions_rad is not None,
                 "reset": self._current_episode_dir is None,
+                "confirm_gripper_closed": self._current_episode_dir is None and self._pending_initial_gripper_close,
+                "open_gripper": self._current_episode_dir is None
+                and self.task.gripper_forever_closed
+                and self._current_initial_pose is not None,
                 "start": ready and self._current_episode_dir is None,
                 "stop": self._current_episode_dir is not None,
+                "mark_success": False,
+                "mark_fail": False,
                 "discard": self._current_episode_dir is None
                 and (self._latest_saved_episode_dir or self.sessions.get_latest_saved_episode_dir()) is not None,
                 "quit": self._current_episode_dir is None,
             },
-            "snapshots": self._snapshot_metadata_locked(),
-            "preview_note": None if not self.frozen_rgb_snapshots else "frozen idle RGB snapshots",
+            "preview": preview,
+            "snapshots": self._snapshot_metadata_from_preview(preview),
+            "preview_note": preview["label"] if preview["streaming"] else None,
         }
 
-    def _snapshot_metadata_locked(self) -> dict[str, dict[str, object]]:
-        metadata: dict[str, dict[str, object]] = {}
-        for role in self.rgb_camera_buffers:
-            snapshot = self.frozen_rgb_snapshots.get(role)
-            if snapshot is None:
-                metadata[role] = {"available": False}
-                continue
-            metadata[role] = {
-                "available": True,
-                "token": snapshot.token,
-                "captured_wall_time": snapshot.captured_wall_time,
-                "label": snapshot.label,
+    def _preview_metadata_locked(self, *, ready: bool) -> dict[str, object]:
+        role = self.workspace.operator_ui.preview_camera_role
+        sample = self._get_live_preview_sample_locked(role, ready=ready)
+        label = f"Live pre-episode {role} view"
+        if sample is None:
+            return {
+                "role": role,
+                "available": False,
+                "streaming": False,
+                "refresh_hz": self.workspace.operator_ui.preview_refresh_hz,
+                "label": label,
             }
-        return metadata
+        return {
+            "role": role,
+            "available": True,
+            "streaming": True,
+            "token": f"{role}:{sample.captured_wall_time:.6f}",
+            "captured_wall_time": sample.captured_wall_time,
+            "refresh_hz": self.workspace.operator_ui.preview_refresh_hz,
+            "label": f"{label}: {sample.name}",
+        }
 
-    def _clear_snapshot_locked(self) -> None:
-        self.frozen_rgb_snapshots.clear()
+    def _snapshot_metadata_from_preview(self, preview: dict[str, object]) -> dict[str, dict[str, object]]:
+        role = str(preview["role"])
+        metadata = {
+            "available": bool(preview["available"]),
+        }
+        for key in ("token", "captured_wall_time", "label"):
+            if key in preview:
+                metadata[key] = preview[key]
+        return {role: metadata}
 
-    def _update_frozen_snapshot_locked(self, *, ready: bool) -> None:
-        if self._current_episode_dir is not None or not ready or not self.rgb_camera_buffers:
-            self._clear_snapshot_locked()
-            return
-        for role, buffer in self.rgb_camera_buffers.items():
-            if role in self.frozen_rgb_snapshots:
-                continue
-            sample = buffer.get_latest_optional(max_age_sec=self.workspace.operator_ui.snapshot_max_age_sec)
-            if sample is None:
-                continue
-            self.frozen_rgb_snapshots[role] = OperatorSnapshot(
-                name=role,
-                image=sample.data.copy(),
-                captured_wall_time=sample.captured_wall_time,
-                label=f"Frozen pre-episode RGB view ({role}): {sample.name}",
-                image_format=self.workspace.recording.image_format,
-            )
+    def _build_live_preview_snapshot_locked(self, name: str, *, ready: bool) -> OperatorSnapshot | None:
+        sample = self._get_live_preview_sample_locked(name, ready=ready)
+        if sample is None:
+            return None
+        return OperatorSnapshot(
+            name=name,
+            image=sample.data.copy(),
+            captured_wall_time=sample.captured_wall_time,
+            label=f"Live pre-episode {name} view: {sample.name}",
+            image_format=self.workspace.recording.image_format,
+        )
+
+    def _get_live_preview_sample_locked(self, name: str, *, ready: bool):
+        del ready
+        role = self.workspace.operator_ui.preview_camera_role
+        if name != role or self._current_episode_dir is not None:
+            return None
+        buffer = self.rgb_camera_buffers.get(role)
+        if buffer is None:
+            return None
+        return buffer.get_latest_optional(max_age_sec=self.workspace.operator_ui.snapshot_max_age_sec)
 
     def _print_status_if_needed(self) -> None:
         now = time.time()
@@ -478,8 +747,15 @@ class DataCollector:
         print("Checklist:", flush=True)
         print("- Controller PC: vt-franka-controller is already running", flush=True)
         print("- Workspace PC: Quest connected and streaming", flush=True)
-        print("- Press H to move to the task initial EEF pose before each episode", flush=True)
-        print("Hotkeys: H=initial pose  R=start recording  E=end/save  D=discard last saved  Q=quit", flush=True)
+        print("- Press H for the task initial EEF pose. Optional: press J before R when a home-joint reset is needed.", flush=True)
+        print("- If you press J, press H again before R.", flush=True)
+        print("- After E, Quest teleop stays enabled until the next H blocks teleop and moves to the initial pose.", flush=True)
+        if self.task.gripper_forever_closed:
+            print("- Forever-closed gripper is enabled. Press O to open between episodes, then C to close before R.", flush=True)
+        print(
+            "Hotkeys: J=home joints  H=initial pose  O=open gripper  C=confirm/close gripper  R=start recording  E=end/save  D=discard last saved  Q=quit",
+            flush=True,
+        )
         if self.workspace.operator_ui.enabled:
             print(
                 f"Operator UI: http://{self.workspace.operator_ui.host}:{self.workspace.operator_ui.port}/operator",

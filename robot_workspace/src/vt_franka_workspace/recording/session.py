@@ -104,6 +104,36 @@ class RunSessionManager:
         self._active_episode_dir = None
         return episode_dir
 
+    def close_active_episode(self) -> Path | None:
+        if self._active_episode_dir is None:
+            return None
+        episode_dir = self._active_episode_dir
+        self._active_episode_dir = None
+        return episode_dir
+
+    def finalize_episode(
+        self,
+        episode_dir: str | Path,
+        *,
+        outcome: str,
+        metadata_updates: dict[str, Any] | None = None,
+    ) -> None:
+        episode_dir = Path(episode_dir)
+        manifest_path = episode_dir / "episode_manifest.json"
+        manifest = self._read_json(manifest_path)
+        manifest.setdefault("stopped_at_wall_time", time.time())
+        manifest["outcome"] = outcome
+        if metadata_updates:
+            manifest.setdefault("metadata", {}).update(metadata_updates)
+        self._write_json(manifest_path, manifest)
+
+    def update_episode_metadata(self, episode_dir: str | Path, metadata_updates: dict[str, Any]) -> None:
+        episode_dir = Path(episode_dir)
+        manifest_path = episode_dir / "episode_manifest.json"
+        manifest = self._read_json(manifest_path)
+        manifest.setdefault("metadata", {}).update(metadata_updates)
+        self._write_json(manifest_path, manifest)
+
     def get_active_run_dir(self) -> Path | None:
         return self._run_dir
 

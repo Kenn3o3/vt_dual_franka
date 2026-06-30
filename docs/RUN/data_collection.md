@@ -46,12 +46,13 @@ cd /home/zhenya/kenny/visuotact/vt_franka
 
 vt-franka-workspace collect \
   --workspace-config robot_workspace/config/workspace.yaml \
-  --task put_cup_on_plate
+  --task pencil_insertion_demo
 ```
 
 Operator controls:
 
 - `H`: move to the task initial EEF pose.
+- `C`: when `gripper_forever_closed` is enabled, close the gripper after `H` and mark the episode ready.
 - `R`: start recording an episode.
 - `E`: stop and save the current episode.
 - `D`: discard the latest saved episode.
@@ -65,21 +66,27 @@ robot_workspace/data/collect/put_cup_on_plate/episodes/episode_XXXX/
 
 Each episode records raw streams such as `controller_state.jsonl`, `teleop_commands.jsonl`, configured RGB camera streams, and optional tactile streams. There is no postprocessing step in the clean pipeline.
 
+GelSight marker tracking has been removed. When `gelsight.buffered_recording: true`, GelSight capture stores full-resolution raw `uint8` frames in RAM during the episode and flushes them after `E` to `streams/gelsight_frames/chunk_*.npz`, with per-frame timestamps and chunk indices in `streams/gelsight_frames.jsonl`.
+
+Task configs support two optional initial-state controls:
+
+- `gripper_forever_closed: true` keeps the gripper closed for the full episode. After every `H`, press `C` to close it before `R`. Recorded `teleop_commands.gripper_closed` stays `true`.
+- `rand_init_pose: [x, y, z]` adds a uniform random xyz offset in `[-range, +range]` meters to the configured initial EEF pose for each `H`.
+
 Optional commands:
 
 output aligned dataset:
 
 ```bash
-python tools/align_episode.py robot_workspace/data/collect/put_cup_on_plate --hz 10 --overwrite
+python tools/align_episode.py robot_workspace/data/collect/erasing --hz 10 --overwrite
 ```
 
 visualize aligned dataset
 
 ```bash
-python tools/visualize_aligned_episode.py robot_workspace/data/collect/put_cup_on_plate --overwrite
+python tools/visualize_aligned_episode.py robot_workspace/data/collect/usb_insertion --overwrite
 
 # or
 
-python tools/visualize_aligned_episode.py robot_workspace/data/collect/put_cup_on_plate/episodes/episode_0000 --overwrite
+python tools/visualize_aligned_episode.py /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/collect/erasing/episodes/episode_0000 --overwrite
 ```
-

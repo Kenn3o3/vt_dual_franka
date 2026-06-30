@@ -1,0 +1,23 @@
+defaults:
+  - train_vista
+  - _self_
+
+name: vista_so2
+dataset: vista.dataset.univtac_replay_image_so2_sym_dataset.UniVTACReplayImageSO2SymDataset
+
+policy:
+  _target_: vista.policy.vista_so2_policy.VISTAPolicy
+  N: 8
+
+logging:
+  name: vista_so2_demo${n_demo}
+  tags: ["${name}", "${task_name}", "${exp_name}"]
+
+hydra:
+  job:
+    override_dirname: ${name}
+  run:
+    dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}_demo${n_demo}
+  sweep:
+    dir: data/outputs/${now:%Y.%m.%d}/${now:%H.%M.%S}_${name}_${task_name}_demo${n_demo}
+    subdir: ${hydra.job.num}

@@ -36,6 +36,7 @@ class QuestTeleopService:
         quest_message_recorder: JsonlStreamRecorder | None = None,
         command_recorder: JsonlStreamRecorder | None = None,
         state_provider: Callable[[], ControllerState] | None = None,
+        gripper_forever_closed: bool = False,
     ) -> None:
         self.settings = settings
         self.controller = controller
@@ -43,6 +44,7 @@ class QuestTeleopService:
         self.quest_message_recorder = quest_message_recorder
         self.command_recorder = command_recorder
         self.state_provider = state_provider
+        self.gripper_forever_closed = bool(gripper_forever_closed)
 
         self._running = Event()
         self._message_lock = Lock()
@@ -175,7 +177,7 @@ class QuestTeleopService:
     def _handle_gripper_toggle(self, message: UnityTeleopMessage) -> None:
         trigger_pressed = message.leftHand.triggerState > self.settings.trigger_close_threshold
         grip_pressed = self._button_pressed(message, 3)
-        wants_closed = trigger_pressed or grip_pressed
+        wants_closed = self.gripper_forever_closed or trigger_pressed or grip_pressed
         if wants_closed and not self._gripper_closed:
             if self.settings.use_force_control_for_gripper:
                 self.controller.grasp_gripper(

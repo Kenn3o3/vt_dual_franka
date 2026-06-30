@@ -56,7 +56,7 @@ def test_write_rollout_video_from_rgb_stream(tmp_path: Path):
     assert output_path.stat().st_size > 0
 
 
-def test_write_rollout_video_draws_policy_action_overlay(tmp_path: Path):
+def test_write_rollout_video_keeps_publication_video_clean(tmp_path: Path):
     cv2 = pytest.importorskip("cv2")
     sessions = RunSessionManager(tmp_path / "runs")
     sessions.start_run("eval_video")
@@ -101,4 +101,4 @@ def test_write_rollout_video_draws_policy_action_overlay(tmp_path: Path):
     ok, frame = cap.read()
     cap.release()
     assert ok
-    assert frame[:20].mean() < 250
+    assert frame[:20].mean() > 240

@@ -8,6 +8,8 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from .image_io import write_rgb_image
+
 
 class SupportsActiveEpisodeDir(Protocol):
     def get_active_episode_dir(self) -> Path | None: ...
@@ -70,18 +72,10 @@ class JsonlStreamRecorder:
         event_time = float(event_time if event_time is not None else time.time())
         if not self._should_record(episode_dir, event_time):
             return None
-        try:
-            import cv2
-        except ImportError as exc:  # pragma: no cover - runtime dependency for image writing
-            raise RuntimeError("OpenCV is required to record image frames") from exc
-
         frame_dir = episode_dir / "streams" / self.stream_name
         frame_dir.mkdir(parents=True, exist_ok=True)
         frame_path = frame_dir / f"{frame_id}.{image_format}"
-        success, encoded = cv2.imencode(f".{image_format}", frame)
-        if not success:
-            raise RuntimeError("Failed to encode frame for recording")
-        frame_path.write_bytes(encoded.tobytes())
+        write_rgb_image(frame_path, frame, quality=90)
         payload = {"frame_path": frame_path.relative_to(episode_dir).as_posix()}
         if metadata:
             payload["metadata"] = metadata
