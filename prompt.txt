@@ -1,0 +1,4 @@
+现在我的vt franka遥操系统只用了一个franka arm。目前是这样连接franka机械臂到remote pc的：
+remote pc网线连到一个机械臂之后改linux setting：USB以太网 setting：IPv4 手动 地址：10.0.0.1 子网掩码：255.255.255.0
+之后就可以用这个代码了。我有一个需求：
+我需要把现在这一套系统变得可以用双机械臂，也就是两个franka robot arms。但是我的remote pc目前只有一个网口，所以我买了一个一分二网络分线器但是不知道怎么用。

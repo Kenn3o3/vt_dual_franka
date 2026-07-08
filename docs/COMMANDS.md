@@ -103,8 +103,8 @@ rsync -avh --info=progress2 \
 
 rsync -avh --info=progress2 \
   -e "ssh -i ~/.ssh/zlkenny_yzy673_ed25519 -p 538 -o IdentitiesOnly=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6" \
-  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_franka/robot_workspace/data/checkpoints/pencil_insertion_demo/vista_so3/checkpoints/epoch=059.ckpt \
-  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_franka/robot_workspace/data/checkpoints/pencil_insertion_demo/vista_so3/checkpoints/epoch=059.info.json \
+  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_franka/robot_workspace/data/checkpoints/pencil_insertion_demo/vista_so3/checkpoints/epoch=209.ckpt \
+  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_franka/robot_workspace/data/checkpoints/pencil_insertion_demo/vista_so3/checkpoints/epoch=209.info.json \
   /mnt/kenny_ssd/vt_franka/data/checkpoints/pencil_insertion_demo/vista_so3/checkpoints/
 ```
 
@@ -120,4 +120,12 @@ python -m vt_franka_workspace.cli run-policy \
   --task pencil_insertion_demo \
   --inference-config robot_workspace/config/inference/pencil_insertion_visuotactile.yaml \
   --policy-config robot_workspace/config/policies/visuotactile_pencil_insertion_demo_vista_so3_epoch059_ddim16.yaml
+```
+
+```bash
+python -m vt_franka_workspace.cli run-policy \
+  --workspace-config robot_workspace/config/workspace.yaml \
+  --task pencil_insertion_demo \
+  --inference-config robot_workspace/config/inference/pencil_insertion_visuotactile.yaml \
+  --policy-config robot_workspace/config/policies/visuotactile_pencil_insertion_demo_vista_so3_epoch209_ddim16.yaml
 ```

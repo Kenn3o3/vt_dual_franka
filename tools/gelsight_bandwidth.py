@@ -23,7 +23,6 @@ if str(SHARED_SRC) not in sys.path:
 from vt_franka_workspace.config import GelsightSettings, load_task_config
 from vt_franka_workspace.sensors.gelsight.publisher import GelsightPublisher
 
-
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
