@@ -13,6 +13,8 @@ class Action(BaseModel):
     target_duration_sec: float | None = None
     gripper_width: float | None = None
     gripper_closed: bool | None = None
+    gripper_width_by_arm: dict[ArmId, float] | None = None
+    gripper_closed_by_arm: dict[ArmId, bool] | None = None
     gripper_velocity: float = 0.1
     gripper_force_limit: float = 5.0
     terminate: bool = False
@@ -40,6 +42,13 @@ class Action(BaseModel):
     def _validate_duration(cls, value: float | None) -> float | None:
         if value is not None and value <= 0.0:
             raise ValueError("target_duration_sec must be positive")
+        return value
+
+    @field_validator("gripper_width_by_arm", "gripper_closed_by_arm")
+    @classmethod
+    def _validate_dual_gripper_mapping(cls, value, info):
+        if value is not None and set(value) != {"left", "right"}:
+            raise ValueError(f"{info.field_name} must contain exactly left and right")
         return value
 
 
@@ -152,16 +161,60 @@ class DualActionExecutor:
     def __init__(self, coordinator, *, gripper_close_threshold: float = 0.5) -> None:
         self.coordinator = coordinator
         self.gripper_close_threshold = float(gripper_close_threshold)
+        self._last_gripper_closed: dict[ArmId, bool | None] = {"left": None, "right": None}
+
+    def reset(self) -> None:
+        self._last_gripper_closed = {"left": None, "right": None}
+
+    @staticmethod
+    def normalize_for_execution(action: Action) -> Action:
+        return action
 
     def execute_normalized(self, action: Action, *, source: str = "dual_policy_runner") -> None:
         if action.target_tcp_by_arm is None:
             raise ValueError("DualActionExecutor requires action.target_tcp_by_arm")
+        self._execute_grippers(action, source=source)
         target_duration_sec = action.target_duration_sec or 0.1
         self.coordinator.queue_tcp_pair(
             action.target_tcp_by_arm,
             source=source,
             target_duration_sec=target_duration_sec,
         )
+
+    def _execute_grippers(self, action: Action, *, source: str) -> None:
+        closed_by_arm = action.gripper_closed_by_arm
+        width_by_arm = action.gripper_width_by_arm
+        for arm_id in ("left", "right"):
+            controller = self.coordinator.arms[arm_id].controller
+            if closed_by_arm is not None:
+                wants_closed = bool(closed_by_arm[arm_id])
+                if self._last_gripper_closed[arm_id] == wants_closed:
+                    continue
+                if wants_closed:
+                    controller.grasp_gripper(
+                        action.gripper_velocity,
+                        action.gripper_force_limit,
+                        source=source,
+                        blocking=False,
+                    )
+                else:
+                    width = 0.078 if width_by_arm is None else float(width_by_arm[arm_id])
+                    controller.move_gripper(
+                        width,
+                        action.gripper_velocity,
+                        action.gripper_force_limit,
+                        source=source,
+                        blocking=False,
+                    )
+                self._last_gripper_closed[arm_id] = wants_closed
+            elif width_by_arm is not None:
+                controller.move_gripper(
+                    float(width_by_arm[arm_id]),
+                    action.gripper_velocity,
+                    action.gripper_force_limit,
+                    source=source,
+                    blocking=False,
+                )
 
 
 def action_to_json(action: Action) -> dict[str, Any]:

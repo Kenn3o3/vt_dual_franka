@@ -27,6 +27,7 @@ def test_publish_image_sends_length_chunk_and_payload(monkeypatch):
     class FakeCv2:
         IMWRITE_JPEG_QUALITY = 1
         INTER_AREA = 2
+        COLOR_RGB2BGR = 3
 
         @staticmethod
         def imencode(ext, image, params=None):
@@ -36,6 +37,11 @@ def test_publish_image_sends_length_chunk_and_payload(monkeypatch):
         @staticmethod
         def resize(image, size, interpolation=None):
             del size, interpolation
+            return image
+
+        @staticmethod
+        def cvtColor(image, conversion):
+            del conversion
             return image
 
     monkeypatch.setattr(quest_udp, "_require_cv2", lambda: FakeCv2)

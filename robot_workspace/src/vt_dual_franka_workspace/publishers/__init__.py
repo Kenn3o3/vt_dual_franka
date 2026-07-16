@@ -1,5 +1,5 @@
 from .quest_udp import QuestUdpPublisher
-from .state_bridge import StateBridge
+from .state_bridge import DualStateBridge
 
-__all__ = ["QuestUdpPublisher", "StateBridge"]
+__all__ = ["QuestUdpPublisher", "DualStateBridge"]
 

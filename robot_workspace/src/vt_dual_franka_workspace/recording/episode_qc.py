@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 
 TIMESTAMP_KEYS_BY_STREAM = {
-    "controller_state": ("received_wall_time", "source_wall_time", "recorded_at_wall_time"),
+    "controller_state_by_arm": ("received_wall_time", "source_wall_time", "recorded_at_wall_time"),
     "quest_messages": ("source_wall_time", "recorded_at_wall_time"),
     "teleop_commands": ("source_wall_time", "recorded_at_wall_time"),
     "gelsight_frames": ("captured_wall_time", "recorded_at_wall_time"),
@@ -27,7 +27,7 @@ GAP_THRESHOLDS_SEC = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0)
 def build_expected_episode_hz(workspace: Any, task: Any) -> dict[str, float]:
     expected: dict[str, float] = {}
     if getattr(task.modality, "proprioception", False):
-        expected["controller_state"] = float(task.collection.controller_state_poll_hz)
+        expected["controller_state_by_arm"] = float(task.collection.controller_state_poll_hz)
     if getattr(task.collection, "record_raw_quest_messages", False):
         quest_hz = float(getattr(workspace.teleop, "quest_message_record_hz", 0.0))
         expected["quest_messages"] = quest_hz if quest_hz > 0.0 else float(workspace.teleop.loop_hz)
@@ -44,16 +44,12 @@ def build_expected_episode_hz(workspace: Any, task: Any) -> dict[str, float]:
         preprocess1 = getattr(getattr(task, "collection", None), "preprocess1_recording", None)
         if role == "wrist" and preprocess1 is not None and getattr(preprocess1, "enabled", False):
             expected["preprocess1_rgb_wrist"] = float(getattr(preprocess1, "target_hz", settings.color_fps))
-    if task.modality.needs_gelsight() and task.gelsight.save_frames:
-        preprocess1 = getattr(getattr(task, "collection", None), "preprocess1_recording", None)
-        if preprocess1 is not None and getattr(preprocess1, "enabled", False):
-            expected["preprocess1_gelsight"] = float(getattr(preprocess1, "target_hz", task.gelsight.fps))
-            if getattr(preprocess1, "save_raw_gelsight_frames", False):
-                record_hz = float(task.gelsight.record_hz)
-                expected["gelsight_frames"] = record_hz if record_hz > 0.0 else float(task.gelsight.fps)
-        else:
-            record_hz = float(task.gelsight.record_hz)
-            expected["gelsight_frames"] = record_hz if record_hz > 0.0 else float(task.gelsight.fps)
+    if task.modality.needs_gelsight():
+        for arm_id, settings in task.gelsights.items():
+            if not settings.enabled:
+                continue
+            record_hz = float(settings.record_hz)
+            expected[f"tactile_{arm_id}"] = record_hz if record_hz > 0.0 else float(settings.fps)
     return expected
 
 
@@ -96,7 +92,7 @@ def analyze_episode_quality(
 
     summary = _build_summary(streams, warnings)
     report = {
-        "schema_version": "vt_franka_episode_qc_v1",
+        "schema_version": "vt_dual_franka_episode_qc_v1",
         "generated_at_wall_time": time.time(),
         "episode_dir": str(episode_dir),
         "episode": {

@@ -101,6 +101,13 @@ class ControllerClient:
             raise
 
     def reset(self, command: ResetCommand) -> dict[str, Any]:
+        if self.arm_id is None:
+            raise ControllerClientError("Reset requires an arm-scoped controller client")
+        if command.arm_id is not None and command.arm_id != self.arm_id:
+            raise ControllerClientError(
+                f"Controller client arm_id={self.arm_id!r} cannot send reset for {command.arm_id!r}"
+            )
+        command = command.model_copy(update={"arm_id": self.arm_id})
         try:
             return self._post_json(
                 "/api/v1/actions/reset",

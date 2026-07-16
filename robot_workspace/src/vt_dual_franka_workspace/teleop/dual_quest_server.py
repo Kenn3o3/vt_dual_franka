@@ -90,6 +90,9 @@ class DualQuestTeleopService:
             for state in self._states.values():
                 state.tracking = False
 
+    def is_teleop_enabled(self) -> bool:
+        return self._teleop_enabled
+
     def has_recent_message(self, timeout_sec: float) -> bool:
         with self._message_lock:
             last = self._last_message_wall_time
@@ -115,16 +118,18 @@ class DualQuestTeleopService:
                 dual_state = self.coordinator.get_state(max_age_sec=2.0)
                 self._update_gripper_states({"left": dual_state.left, "right": dual_state.right})
                 targets: dict[ArmId, list[float]] = {}
+                has_active_target = False
                 for arm_id in ARM_ORDER:
                     hand = message.leftHand if arm_id == "left" else message.rightHand
                     state = dual_state.left if arm_id == "left" else dual_state.right
                     target = self._target_for_arm(arm_id, hand, state)
                     if target is not None:
                         targets[arm_id] = target
+                        has_active_target = True
                         self._handle_gripper(arm_id, hand)
-                    elif self._states[arm_id].tracking:
-                        targets[arm_id] = list(state.tcp_pose)
-                if len(targets) == 2:
+                if has_active_target:
+                    targets.setdefault("left", list(dual_state.left.tcp_pose))
+                    targets.setdefault("right", list(dual_state.right.tcp_pose))
                     command_id = self.coordinator.queue_tcp_pair(targets, source="dual_teleop", target_duration_sec=period)
                     self._record_command(command_id, targets)
             except Exception as exc:
@@ -191,6 +196,10 @@ class DualQuestTeleopService:
                 "source_wall_time": time.time(),
                 "command_id": command_id,
                 "target_tcp": {arm_id: targets[arm_id] for arm_id in ARM_ORDER},
+                "gripper_closed": {arm_id: self._states[arm_id].gripper_closed for arm_id in ARM_ORDER},
+                "gripper_closedness": {
+                    arm_id: 1.0 if self._states[arm_id].gripper_closed else 0.0 for arm_id in ARM_ORDER
+                },
                 "arm_order": list(ARM_ORDER),
             },
             event_time=time.time(),

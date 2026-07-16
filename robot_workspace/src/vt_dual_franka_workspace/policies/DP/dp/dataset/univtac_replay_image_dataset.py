@@ -140,6 +140,7 @@ def _resolve_h5_source_path(h5_file: h5py.File, key: str, obs_type: str) -> str:
     key_to_candidates = {
         "agentview_image": ["observation/head/rgb"],
         "robot0_eye_in_hand_image": ["observation/wrist/rgb", "observation/head/rgb"],
+        "robot1_eye_in_hand_image": ["observation/right_wrist/rgb"],
     }
     tactile_key_to_candidates = {
         "robot0_tactile_left_image": [
@@ -147,6 +148,10 @@ def _resolve_h5_source_path(h5_file: h5py.File, key: str, obs_type: str) -> str:
             "tactile/left_gsmini/rgb_marker",
         ],
         "robot0_tactile_right_image": [
+            "tactile/right_tactile/rgb_marker",
+            "tactile/right_gsmini/rgb_marker",
+        ],
+        "robot1_tactile_right_image": [
             "tactile/right_tactile/rgb_marker",
             "tactile/right_gsmini/rgb_marker",
         ],
@@ -188,24 +193,27 @@ def _episode_to_arrays(
                 f"Episode {episode_path} is missing root 'action' dataset. "
                 "Regenerate the backend export so commanded actions are available."
             )
-        commanded_action = f["action"][:]  # (T, 8), pos + quat(wxyz) + gripper
-        ee = f["embodiment/ee"][:]  # (T, 7), observed pose
-        joint = f["embodiment/joint"][:]  # (T, 9), observed gripper state
+        commanded_action = f["action"][:]
+        ee = f["embodiment/ee"][:] if "embodiment/ee" in f else None
+        joint = f["embodiment/joint"][:] if "embodiment/joint" in f else None
         if commanded_action.shape[0] < 1:
             raise ValueError(f"Episode {episode_path} has no frames")
-        if ee.shape[0] != commanded_action.shape[0] or joint.shape[0] != commanded_action.shape[0]:
+        if ee is not None and ee.shape[0] != commanded_action.shape[0]:
             raise ValueError(
                 f"Temporal length mismatch in {episode_path}: "
-                f"action={commanded_action.shape[0]}, ee={ee.shape[0]}, joint={joint.shape[0]}"
+                f"action={commanded_action.shape[0]}, ee={ee.shape[0]}"
             )
 
         steps = commanded_action.shape[0]
 
-        action_pos = commanded_action[:, :3].astype(np.float32)
-        action_quat_wxyz = commanded_action[:, 3:7].astype(np.float32)
-        action_rot6d = rotation_transformer.forward(action_quat_wxyz).astype(np.float32)
-        action_gripper = commanded_action[:, 7:8].astype(np.float32)
-        action = np.concatenate([action_pos, action_rot6d, action_gripper], axis=-1).astype(np.float32)
+        if commanded_action.shape[1] == action_dim:
+            action = commanded_action.astype(np.float32)
+        else:
+            action_pos = commanded_action[:, :3].astype(np.float32)
+            action_quat_wxyz = commanded_action[:, 3:7].astype(np.float32)
+            action_rot6d = rotation_transformer.forward(action_quat_wxyz).astype(np.float32)
+            action_gripper = commanded_action[:, 7:8].astype(np.float32)
+            action = np.concatenate([action_pos, action_rot6d, action_gripper], axis=-1).astype(np.float32)
         if action.shape[-1] != action_dim:
             raise ValueError(
                 f"Action dim mismatch. Expected {action_dim}, got {action.shape[-1]} "
@@ -214,11 +222,19 @@ def _episode_to_arrays(
 
         arrays = {"action": action}
         for key in lowdim_keys:
-            if key == "robot0_eef_pos":
+            if key == "qpos":
+                arrays[key] = f["observations/qpos"][:].astype(np.float32)
+            elif key == "robot0_eef_pos":
+                if ee is None:
+                    raise ValueError(f"Episode {episode_path} is missing embodiment/ee")
                 arrays[key] = ee[:, :3].astype(np.float32)
             elif key == "robot0_eef_quat":
+                if ee is None:
+                    raise ValueError(f"Episode {episode_path} is missing embodiment/ee")
                 arrays[key] = ee[:, 3:7].astype(np.float32)
             elif key == "robot0_gripper_qpos":
+                if joint is None:
+                    raise ValueError(f"Episode {episode_path} is missing embodiment/joint")
                 arrays[key] = canonicalize_gripper_qpos(joint[:, 7:9]).astype(np.float32) # normailzed
             else:
                 raise ValueError(f"Unsupported lowdim key in shape_meta: {key}")
@@ -447,7 +463,10 @@ class UniVTACReplayImageDataset(BaseImageDataset):
         self.horizon = horizon
         self.pad_before = pad_before
         self.pad_after = pad_after
-        self.ws_center = compute_ws_center(self.replay_buffer["robot0_eef_pos"])
+        if "robot0_eef_pos" in self.replay_buffer:
+            self.ws_center = compute_ws_center(self.replay_buffer["robot0_eef_pos"])
+        else:
+            self.ws_center = np.zeros(3, dtype=np.float32)
         print(f"[UniVTACDataset] auto ws_center={self.ws_center.tolist()}")
 
     def get_validation_dataset(self):
@@ -466,7 +485,9 @@ class UniVTACReplayImageDataset(BaseImageDataset):
         normalizer = LinearNormalizer()
 
         stat = array_to_stats(self.replay_buffer["action"])
-        if self.abs_action:
+        if self.replay_buffer["action"].shape[-1] == 20:
+            action_normalizer = get_range_normalizer_from_stat(stat)
+        elif self.abs_action:
             if self.normalization_mode == "off":
                 action_normalizer = get_identity_normalizer_from_stat(stat)
             elif self.use_legacy_normalizer:

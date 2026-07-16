@@ -1,11 +1,17 @@
 task_name: bimanual_demo
-initial_eef_pose_xyz_rpy_deg: [0.0, 0.45, 0.5, 180.0, 0.0, 45.0]
+initial_poses:
+  left:
+    eef_pose_xyz_rpy_deg: [0.0, 0.3, 0.4, -180.0, 0.0, 45.0]
+    joint_positions_rad: [1.3922, -0.7209, 0.1799, -2.8098, 0.1171, 2.0371, 0.7]
+    random_xyz_range_m: [0.0, 0.0, 0.0]
+  right:
+    eef_pose_xyz_rpy_deg: [0.0, -0.3, 0.4, -180.0, 0.0, -145.0]
+    joint_positions_rad: [-1.5857, -0.7485, 0.0049, -2.8095, 0.0293, 2.0184, 0.9069]
+    random_xyz_range_m: [0.0, 0.0, 0.0]
 initial_move_duration_sec: 2.0
-home_joint_positions_rad: null
 home_joint_duration_sec: 4.0
 home_joint_tolerance_rad: 0.05
 gripper_forever_closed: false
-rand_init_pose: [0.00, 0.00, 0.00]
 
 collection:
   controller_state_poll_hz: 60.0
@@ -50,26 +56,6 @@ rgb_cameras:
     frame_timeout_ms: 200
     save_frames: true
     record_hz: 15.0
-
-gelsight:
-  enabled: true
-  camera_name: left_gripper_camera_1
-  camera_index: 0
-  camera_path: ""
-  device_name_contains: GelSight Mini
-  device_serial_number: ""
-  fps: 10
-  width: 640
-  height: 480
-  apply_controls: false
-  exposure: null
-  contrast: 32
-  save_frames: true
-  record_hz: 0.0
-  buffered_recording: true
-  buffer_max_frames: 900
-  buffer_chunk_frames: 100
-  buffer_overflow_policy: fail_episode
 
 gelsights:
   left:

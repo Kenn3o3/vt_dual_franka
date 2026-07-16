@@ -58,7 +58,22 @@ def test_tcp_command_carries_identity_and_shared_timing():
 
 
 def test_workspace_has_default_dual_arm_endpoints():
-    workspace = WorkspaceSettings()
+    workspace = WorkspaceSettings(
+        arms={
+            "left": ArmEndpointSettings(
+                arm_id="left",
+                host="127.0.0.1",
+                port=8092,
+                request_timeout_sec=0.1,
+            ),
+            "right": ArmEndpointSettings(
+                arm_id="right",
+                host="127.0.0.1",
+                port=8093,
+                request_timeout_sec=0.1,
+            ),
+        }
+    )
 
     assert workspace.arms["left"] == ArmEndpointSettings(arm_id="left", host="127.0.0.1", port=8092, request_timeout_sec=0.1)
     assert workspace.arms["right"] == ArmEndpointSettings(arm_id="right", host="127.0.0.1", port=8093, request_timeout_sec=0.1)

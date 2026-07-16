@@ -59,7 +59,7 @@ class ControllerService:
 
     def queue_tcp_command(self, command: TcpTargetCommand) -> None:
         self._assert_accepting_commands()
-        if command.arm_id is not None and command.arm_id != self.settings.arm_id:
+        if command.arm_id != self.settings.arm_id:
             raise ControllerBusyError(f"Controller arm_id={self.settings.arm_id!r} cannot accept {command.arm_id!r} command")
         target_pose = pose7d_to_pose6d(command.target_tcp)
         target_duration_sec = (
@@ -111,6 +111,7 @@ class ControllerService:
 
     def go_home(self) -> None:
         command = ResetCommand(
+            arm_id=self.settings.arm_id,
             profile="home",
             eef_pose_xyz_rpy_deg=list(self.settings.control.home_ee_pose),
             eef_duration_sec=self.settings.control.home_duration_sec,
@@ -123,6 +124,7 @@ class ControllerService:
         if self.settings.control.ready_ee_pose is None:
             raise RuntimeError("Ready EE pose is not configured")
         command = ResetCommand(
+            arm_id=self.settings.arm_id,
             profile="ready",
             joint_positions=None if self.settings.control.ready_joint_positions is None else list(self.settings.control.ready_joint_positions),
             joint_duration_sec=self.settings.control.ready_joint_duration_sec,
@@ -134,6 +136,10 @@ class ControllerService:
         self.run_reset(command)
 
     def run_reset(self, command: ResetCommand) -> dict[str, str]:
+        if command.arm_id != self.settings.arm_id:
+            raise ControllerBusyError(
+                f"Controller arm_id={self.settings.arm_id!r} cannot accept reset for {command.arm_id!r}"
+            )
         if self._reset_in_progress.is_set():
             raise ControllerBusyError("Controller reset is already in progress")
         self._reset_in_progress.set()
@@ -165,6 +171,9 @@ class ControllerService:
             queue_depth=self._queue_depth(),
             control_loop_running=self._running.is_set(),
             last_state_monotonic_time=last_state.monotonic_time if last_state else None,
+            expected_physical_robot_ip=self.settings.backend.expected_physical_robot_ip,
+            polymetis_robot_endpoint=f"{self.settings.backend.robot_ip}:{self.settings.backend.robot_port}",
+            polymetis_gripper_endpoint=f"{self.settings.backend.gripper_ip}:{self.settings.backend.gripper_port}",
         )
 
     def _refresh_state(self) -> None:

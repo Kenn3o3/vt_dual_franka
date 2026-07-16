@@ -191,7 +191,7 @@ def _is_common_dataset_dir(path: Path) -> bool:
         payload = _read_json(manifest_path)
     except Exception:
         return False
-    return str(payload.get("schema_version", "")).startswith("vt_franka_common_dataset")
+    return payload.get("schema_version") == "vt_dual_franka_common_dataset_v1"
 
 
 def _prepared_dir_for_common_dataset(common_dataset_dir: Path, config: TrainVisuotactileConfig, spec: VisuotactileModelSpec) -> Path:
@@ -303,6 +303,7 @@ def _hydra_train_command(
 ) -> list[str]:
     backend_root = POLICIES_ROOT / spec.vendor_subdir
     module_or_script = {
+        "dp_bimanual": str(backend_root / "train.py"),
         "dp_manifeel": str(backend_root / "train.py"),
         "dp_equidiff_tact": str(backend_root / "train.py"),
         "vital_dp": str(POLICIES_ROOT / "DP" / "train.py"),
@@ -310,6 +311,7 @@ def _hydra_train_command(
         "vista_so3": str(backend_root / "train.py"),
     }[spec.name]
     hydra_config = {
+        "dp_bimanual": "train_diffusion_unet_bimanual",
         "dp_manifeel": "train_diffusion_unet_manifeel",
         "dp_equidiff_tact": "train_diffusion_unet_equidiff_tact",
         "vital_dp": "train_diffusion_unet_vital",
@@ -331,7 +333,9 @@ def _hydra_train_command(
         f"multi_run.run_dir={checkpoint_dir}",
         f"logging.mode={config.wandb_mode or 'disabled'}",
     ]
-    if spec.name == "dp_equidiff_tact":
+    if spec.name == "dp_bimanual":
+        pass
+    elif spec.name == "dp_equidiff_tact":
         command.extend(_shape_meta_overrides(spec, include_linked_paths=False))
         command.extend(
             [
@@ -359,7 +363,7 @@ def _hydra_train_command(
         command.append(f"training.num_epochs={config.epochs}")
     if config.learning_rate is not None:
         command.append(f"optimizer.learning_rate={config.learning_rate}")
-    if spec.name in {"dp_manifeel", "dp_equidiff_tact", "vital_dp", "vista_so2", "vista_so3"}:
+    if spec.name in {"dp_bimanual", "dp_manifeel", "dp_equidiff_tact", "vital_dp", "vista_so2", "vista_so3"}:
         if config.epochs is None:
             command.append("training.num_epochs=300")
         command.extend(
@@ -368,11 +372,15 @@ def _hydra_train_command(
                 "training.checkpoint_mode=milestone_train_loss",
                 "training.checkpoint_every=30",
                 "training.val_every=1000000000",
-                "task.dataset.val_ratio=0.0",
                 "checkpoint.topk.k=0",
                 "checkpoint.save_last_ckpt=False",
                 "checkpoint.save_last_snapshot=False",
             ]
+        )
+        command.append(
+            "task.dataset.val_ratio=0.2"
+            if spec.name == "dp_bimanual"
+            else "task.dataset.val_ratio=0.0"
         )
     if spec.name == "vital_dp":
         command.extend(
@@ -571,12 +579,12 @@ def _build_runtime_manifest_bundle(
     normalizer_stats = _read_normalizer_stats(dataset_dir, spec=spec, dry_run=dry_run)
     common_dataset = _common_dataset_manifest(dataset_dir, dataset_manifest, dry_run=dry_run)
     preprocess2 = {
-        "schema_version": "vt_franka_visuotactile_preprocess2_v1",
+        "schema_version": "vt_dual_franka_bimanual_preprocess2_v1",
         "source_dataset_manifest": str(dataset_dir / "dataset_manifest.json"),
         "preprocess2": dataset_manifest["preprocess2"],
     }
     policy = {
-        "schema_version": "vt_franka_visuotactile_policy_v1",
+        "schema_version": "vt_dual_franka_bimanual_policy_v1",
         "model": spec.name,
         "family": spec.family,
         "task_name": task_name,
@@ -597,10 +605,8 @@ def _build_runtime_manifest_bundle(
         "created_at_wall_time": time.time(),
         "runtime_artifact": "checkpoints/epoch=*.ckpt",
         "runtime_note": (
-            "The VT_Franka runtime loads DP/VISTA checkpoints from best.ckpt, latest.ckpt, "
-            "or the latest checkpoints/epoch=*.ckpt milestone "
-            "and ACT/ViTAL ACT checkpoints from policy_best.ckpt or best.ckpt. "
-            "model_torchscript.pt remains supported for exported TorchScript backends."
+            "The dual runtime loads the selected DP checkpoint and executes 20D paired actions. "
+            "model_torchscript.pt is an optional fallback."
         ),
     }
     return RuntimeManifests(
@@ -693,8 +699,20 @@ def _read_normalizer_stats(
         return _read_json(path)
     if not dry_run:
         raise FileNotFoundError(path)
-    preferred_action = "action_pose10_rot6d_gripper" if spec.action_representation == "pose10_rot6d_gripper" else "action_pose7_gripper"
-    preferred_qpos = "qpos_pose10_rot6d_gripper" if spec.action_representation == "pose10_rot6d_gripper" else "qpos_pose7_gripper"
+    if spec.action_representation == "bimanual_pose20_rot6d_gripper":
+        preferred_action = "action20"
+        preferred_qpos = "qpos20"
+    else:
+        preferred_action = (
+            "action_pose10_rot6d_gripper"
+            if spec.action_representation == "pose10_rot6d_gripper"
+            else "action_pose7_gripper"
+        )
+        preferred_qpos = (
+            "qpos_pose10_rot6d_gripper"
+            if spec.action_representation == "pose10_rot6d_gripper"
+            else "qpos_pose7_gripper"
+        )
     return {
         "schema_version": "vt_franka_visuotactile_normalizer_dry_run_placeholder",
         "preferred_action_key": preferred_action,

@@ -26,6 +26,7 @@ class MakeBimanualDatasetConfig:
     overwrite: bool = False
     max_state_skew_sec: float = 0.04
     max_action_lead_sec: float | None = None
+    max_image_age_sec: float = 0.2
     gripper_open_width_m: float = 0.078
 
 
@@ -67,39 +68,72 @@ def _build_episode(episode_dir: Path, *, output_dir: Path, config: MakeBimanualD
     streams_dir = episode_dir / "streams"
     command_records = _read_jsonl(streams_dir / "teleop_commands.jsonl")
     state_records = _read_jsonl(streams_dir / "controller_state_by_arm.jsonl")
-    if not state_records:
-        state_records = _read_jsonl(streams_dir / "controller_state.jsonl")
     if not command_records:
         raise RuntimeError(f"Episode is missing commanded teleop stream: {episode_dir}")
     if not state_records:
-        raise RuntimeError(f"Episode is missing controller state stream: {episode_dir}")
+        raise RuntimeError(f"Episode is missing dual controller state stream: {episode_dir}")
+    image_streams = {
+        stream_name: _read_jsonl(streams_dir / f"{stream_name}.jsonl")
+        for stream_name in ("rgb_wrist_left", "rgb_wrist_right", "tactile_left", "tactile_right")
+    }
+    missing_streams = [name for name, records in image_streams.items() if not records]
+    if missing_streams:
+        raise RuntimeError(f"Episode is missing bimanual image stream(s) {missing_streams}: {episode_dir}")
     state_times = _times(state_records, "received_wall_time")
     command_times = _times(command_records, "source_wall_time")
+    image_times = {
+        name: _times(records, "captured_wall_time") for name, records in image_streams.items()
+    }
     start = float(state_times[0])
     end = min(float(state_times[-1]), float(command_times[-1]))
     step = 1.0 / float(config.target_hz)
     action_horizon_sec = step if config.max_action_lead_sec is None else float(config.max_action_lead_sec)
+    episode_out = output_dir / "episodes" / episode_dir.name
+    episode_out.mkdir(parents=True, exist_ok=True)
     rows: list[dict[str, Any]] = []
     for timestamp in np.arange(start, end + step * 0.5, step):
         state_item, state_time = _latest(state_records, state_times, float(timestamp))
         command_item, command_time = _next(command_records, command_times, float(timestamp))
         if state_item is None or command_item is None:
             continue
+        if float(timestamp - state_time) > float(config.max_state_skew_sec):
+            continue
         action_lead_sec = float(command_time - timestamp)
         if action_lead_sec <= 0.0 or action_lead_sec > action_horizon_sec:
+            continue
+        image_items: dict[str, tuple[dict[str, Any], float]] = {}
+        for stream_name, records in image_streams.items():
+            image_item, image_time = _latest(records, image_times[stream_name], float(timestamp))
+            if image_item is None or float(timestamp - image_time) > float(config.max_image_age_sec):
+                image_items = {}
+                break
+            image_items[stream_name] = (image_item, image_time)
+        if len(image_items) != 4:
             continue
         states = _state_by_arm(state_item)
         commanded = _target_tcp_by_arm(command_item)
         if commanded is None:
             continue
         gripper_closedness = _gripper_closedness_by_arm(command_item)
+        step_index = len(rows)
+        image_paths = {
+            stream_name: _copy_step_image(
+                source_episode_dir=episode_dir,
+                output_episode_dir=episode_out,
+                stream_name=stream_name,
+                step_index=step_index,
+                record=item,
+            )
+            for stream_name, (item, _) in image_items.items()
+        }
         rows.append(
             {
                 "episode_id": episode_dir.name,
-                "step_index": len(rows),
+                "step_index": step_index,
                 "timestamp": float(timestamp),
                 "controller_state_by_arm": {arm: states[arm].model_dump(mode="json") for arm in ARM_ORDER},
                 "qpos20": bimanual_states_to_20d(states, gripper_open_width_m=config.gripper_open_width_m).astype(float).tolist(),
+                "images": image_paths,
                 "commanded_actions": {
                     "target_tcp": commanded,
                     "closedness": gripper_closedness,
@@ -109,13 +143,18 @@ def _build_episode(episode_dir: Path, *, output_dir: Path, config: MakeBimanualD
                 "source": {
                     "controller_state": {"timestamp": state_time, "age_sec": float(timestamp - state_time)},
                     "commanded_action": {"timestamp": command_time, "lead_sec": action_lead_sec},
+                    "images": {
+                        stream_name: {
+                            "timestamp": image_time,
+                            "age_sec": float(timestamp - image_time),
+                        }
+                        for stream_name, (_, image_time) in image_items.items()
+                    },
                 },
             }
         )
     if not rows:
         raise RuntimeError(f"No bimanual samples survived alignment for {episode_dir}")
-    episode_out = output_dir / "episodes" / episode_dir.name
-    episode_out.mkdir(parents=True, exist_ok=True)
     steps_path = episode_out / "steps.jsonl"
     _write_jsonl(steps_path, rows)
     return {
@@ -152,6 +191,28 @@ def _gripper_closedness_by_arm(record: dict[str, Any]) -> dict[ArmId, float]:
     if isinstance(raw_closed, dict):
         return {arm: 1.0 if raw_closed.get(arm) else 0.0 for arm in ARM_ORDER}
     return {"left": 0.0, "right": 0.0}
+
+
+def _copy_step_image(
+    *,
+    source_episode_dir: Path,
+    output_episode_dir: Path,
+    stream_name: str,
+    step_index: int,
+    record: dict[str, Any],
+) -> str:
+    rel_source = record.get("frame_path")
+    if not rel_source:
+        raise KeyError(f"{stream_name} record is missing frame_path")
+    source = source_episode_dir / str(rel_source)
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    suffix = source.suffix.lower() or ".jpg"
+    destination = output_episode_dir / "images" / stream_name / f"{step_index:06d}{suffix}"
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    dataset_root = output_episode_dir.parent.parent
+    return destination.relative_to(dataset_root).as_posix()
 
 
 def _default_output_dir(collect_task_dir: Path, dataset_name: str) -> Path:

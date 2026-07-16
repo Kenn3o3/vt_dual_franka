@@ -3,33 +3,29 @@ from __future__ import annotations
 import logging
 import time
 from threading import Event, Thread
-from typing import Callable
-
 from vt_dual_franka_shared.timing import precise_sleep
-from vt_dual_franka_shared.models import ControllerState
+from vt_dual_franka_shared.models import DualArmControllerState
 
-from ..controller.client import ControllerClient
 from ..recording.raw_recorder import JsonlStreamRecorder
-from ..settings import QuestFeedbackSettings
+from ..config import QuestFeedbackSettings
+from ..runtime.dual_arm import DualArmCoordinator
 from .quest_udp import QuestUdpPublisher
 
 LOGGER = logging.getLogger(__name__)
 
 
-class StateBridge:
+class DualStateBridge:
     def __init__(
         self,
-        controller: ControllerClient,
+        coordinator: DualArmCoordinator,
         quest_publisher: QuestUdpPublisher,
         settings: QuestFeedbackSettings,
         recorder: JsonlStreamRecorder | None = None,
-        state_provider: Callable[[], ControllerState] | None = None,
     ) -> None:
-        self.controller = controller
+        self.coordinator = coordinator
         self.quest_publisher = quest_publisher
         self.settings = settings
         self.recorder = recorder
-        self.state_provider = state_provider
         self._running = Event()
         self._thread: Thread | None = None
 
@@ -54,18 +50,20 @@ class StateBridge:
                 if self.recorder is not None:
                     self.recorder.record_event(
                         {
-                            "source_wall_time": state.wall_time,
-                            "source_monotonic_time": state.monotonic_time,
+                            "schema_version": "vt_dual_franka_controller_state_v1",
+                            "source_wall_time": max(state.left.wall_time, state.right.wall_time),
+                            "source_monotonic_time": max(state.left.monotonic_time, state.right.monotonic_time),
                             "received_wall_time": time.time(),
-                            "state": state.model_dump(mode="json"),
+                            "state_by_arm": {
+                                "left": state.left.model_dump(mode="json"),
+                                "right": state.right.model_dump(mode="json"),
+                            },
                         },
-                        event_time=state.wall_time,
+                        event_time=max(state.left.wall_time, state.right.wall_time),
                     )
             except Exception as exc:
                 LOGGER.warning("State bridge iteration failed: %s", exc)
             precise_sleep(period)
 
-    def _get_state(self) -> ControllerState:
-        if self.state_provider is not None:
-            return self.state_provider()
-        return self.controller.get_state()
+    def _get_state(self) -> DualArmControllerState:
+        return self.coordinator.get_state()

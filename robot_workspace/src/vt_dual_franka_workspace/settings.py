@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from .config import (
+    ArmEndpointSettings,
+    ArmInitialPoseSettings,
     CalibrationSettings,
     CollectionRuntimeSettings,
-    ControllerClientSettings,
     EvalRuntimeSettings,
     GelsightSettings,
     InferenceRuntimeSettings,
@@ -21,9 +22,10 @@ from .config import (
 )
 
 __all__ = [
+    "ArmEndpointSettings",
+    "ArmInitialPoseSettings",
     "CalibrationSettings",
     "CollectionRuntimeSettings",
-    "ControllerClientSettings",
     "EvalRuntimeSettings",
     "GelsightSettings",
     "InferenceRuntimeSettings",

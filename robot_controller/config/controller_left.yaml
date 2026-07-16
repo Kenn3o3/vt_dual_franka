@@ -10,6 +10,7 @@ backend:
   robot_port: 50051
   gripper_ip: 127.0.0.1
   gripper_port: 50052
+  expected_physical_robot_ip: 172.16.0.2
 
 control:
   control_frequency_hz: 300.0
@@ -17,11 +18,11 @@ control:
   state_cache_hz: 60.0
   cartesian_stiffness: [750.0, 750.0, 750.0, 15.0, 15.0, 15.0]
   cartesian_damping: [37.0, 37.0, 37.0, 2.0, 2.0, 2.0]
-  home_ee_pose: [0.0, 0.45, 0.5, 180, 0, 45]
+  home_ee_pose: [0.0, 0.3, 0.4, -180.0, 0.0, 45.0]
   home_duration_sec: 8.0
-  ready_ee_pose: [0.0, 0.45, 0.5, 180, 0, 45]
+  ready_ee_pose: [0.0, 0.3, 0.4, -180.0, 0.0, 45.0]
   ready_duration_sec: 2.0
-  ready_joint_positions: [1.7026, -0.0901, -0.1763, -1.8991, -0.0258, 1.791, 0.7442]
+  ready_joint_positions: [1.3922, -0.7209, 0.1799, -2.8098, 0.1171, 2.0371, 0.7]
   ready_joint_duration_sec: 4.0
   max_policy_pos_speed_m_s: 0.10
   max_policy_rot_speed_rad_s: 0.3

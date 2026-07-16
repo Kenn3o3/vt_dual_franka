@@ -1,7 +1,0 @@
-type: mpd
-checkpoint_path: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/checkpoints/put_cup_on_plate/mpd/motif/motif_state_timefix_actioninit/best_model.pth
-config:
-  algorithm: motif
-  task_name: put_cup_on_plate
-  policy_name: motif_state_timefix_actioninit
-  device: cuda

@@ -9,14 +9,11 @@ from vt_dual_franka_shared.config import load_yaml_model
 from vt_dual_franka_shared.models import ArmId
 
 
-class ControllerClientSettings(BaseModel):
+class ArmEndpointSettings(BaseModel):
+    arm_id: ArmId
     host: str = "127.0.0.1"
     port: int = 8092
-    request_timeout_sec: float = 1.0
-
-
-class ArmEndpointSettings(ControllerClientSettings):
-    arm_id: ArmId
+    request_timeout_sec: float = 0.1
 
 
 class TeleopSettings(BaseModel):
@@ -184,18 +181,25 @@ class CalibrationSettings(BaseModel):
 
 
 class WorkspaceSettings(BaseModel):
-    controller: ControllerClientSettings = Field(default_factory=ControllerClientSettings)
-    arms: dict[ArmId, ArmEndpointSettings] = Field(
-        default_factory=lambda: {
-            "left": ArmEndpointSettings(arm_id="left", host="127.0.0.1", port=8092, request_timeout_sec=0.1),
-            "right": ArmEndpointSettings(arm_id="right", host="127.0.0.1", port=8093, request_timeout_sec=0.1),
-        }
-    )
+    arms: dict[ArmId, ArmEndpointSettings]
     teleop: TeleopSettings = Field(default_factory=TeleopSettings)
     quest_feedback: QuestFeedbackSettings = Field(default_factory=QuestFeedbackSettings)
     recording: RecordingSettings = Field(default_factory=RecordingSettings)
     calibration: CalibrationSettings = Field(default_factory=CalibrationSettings)
     operator_ui: OperatorUiSettings = Field(default_factory=OperatorUiSettings)
+
+    @model_validator(mode="after")
+    def _validate_dual_arm_endpoints(self) -> "WorkspaceSettings":
+        _validate_exact_arm_mapping(self.arms, "workspace.arms")
+        for arm_id, endpoint in self.arms.items():
+            if endpoint.arm_id != arm_id:
+                raise ValueError(
+                    f"workspace.arms[{arm_id!r}].arm_id must be {arm_id!r}, got {endpoint.arm_id!r}"
+                )
+        endpoint_pairs = [(endpoint.host, endpoint.port) for endpoint in self.arms.values()]
+        if len(set(endpoint_pairs)) != len(endpoint_pairs):
+            raise ValueError("workspace.arms must use distinct controller host/port endpoints")
+        return self
 
 
 class ModalitySettings(BaseModel):
@@ -330,35 +334,47 @@ class CollectionRuntimeSettings(BaseModel):
     preprocess1_recording: Preprocess1RecordingSettings = Field(default_factory=Preprocess1RecordingSettings)
 
 
+class ArmInitialPoseSettings(BaseModel):
+    eef_pose_xyz_rpy_deg: list[float]
+    joint_positions_rad: list[float] | None = None
+    random_xyz_range_m: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
+
+    @field_validator("eef_pose_xyz_rpy_deg")
+    @classmethod
+    def _validate_eef_pose(cls, value: list[float]) -> list[float]:
+        if len(value) != 6:
+            raise ValueError("eef_pose_xyz_rpy_deg must contain exactly 6 values")
+        return value
+
+    @field_validator("joint_positions_rad")
+    @classmethod
+    def _validate_joint_positions(cls, value: list[float] | None) -> list[float] | None:
+        if value is not None and len(value) != 7:
+            raise ValueError("joint_positions_rad must contain exactly 7 values")
+        return value
+
+    @field_validator("random_xyz_range_m")
+    @classmethod
+    def _validate_random_xyz_range(cls, value: list[float]) -> list[float]:
+        if len(value) != 3:
+            raise ValueError("random_xyz_range_m must contain exactly 3 values")
+        if any(item < 0.0 for item in value):
+            raise ValueError("random_xyz_range_m values must be non-negative")
+        return value
+
+
 class TaskConfig(BaseModel):
     task_name: str
-    initial_eef_pose_xyz_rpy_deg: list[float]
+    initial_poses: dict[ArmId, ArmInitialPoseSettings]
     initial_move_duration_sec: float = 2.0
-    home_joint_positions_rad: list[float] | None = None
     home_joint_duration_sec: float = 4.0
     home_joint_tolerance_rad: float = 0.03
     home_joint_settle_timeout_sec: float = 8.0
     gripper_forever_closed: bool = False
-    rand_init_pose: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
     modality: ModalitySettings = Field(default_factory=ModalitySettings)
     collection: CollectionRuntimeSettings = Field(default_factory=CollectionRuntimeSettings)
     rgb_cameras: dict[str, RgbCameraSettings] = Field(default_factory=dict)
-    gelsight: GelsightSettings = Field(default_factory=GelsightSettings)
     gelsights: dict[ArmId, GelsightSettings] = Field(default_factory=dict)
-
-    @field_validator("initial_eef_pose_xyz_rpy_deg")
-    @classmethod
-    def _validate_initial_pose(cls, value: list[float]) -> list[float]:
-        if len(value) != 6:
-            raise ValueError("initial_eef_pose_xyz_rpy_deg must contain exactly 6 values")
-        return value
-
-    @field_validator("home_joint_positions_rad")
-    @classmethod
-    def _validate_home_joint_positions(cls, value: list[float] | None) -> list[float] | None:
-        if value is not None and len(value) != 7:
-            raise ValueError("home_joint_positions_rad must contain exactly 7 values")
-        return value
 
     @field_validator("home_joint_duration_sec", "home_joint_tolerance_rad", "home_joint_settle_timeout_sec")
     @classmethod
@@ -367,17 +383,11 @@ class TaskConfig(BaseModel):
             raise ValueError("home joint timing and tolerance values must be positive")
         return value
 
-    @field_validator("rand_init_pose")
-    @classmethod
-    def _validate_rand_init_pose(cls, value: list[float]) -> list[float]:
-        if len(value) != 3:
-            raise ValueError("rand_init_pose must contain exactly 3 xyz range values")
-        if any(item < 0.0 for item in value):
-            raise ValueError("rand_init_pose values must be non-negative")
-        return value
-
     @model_validator(mode="after")
-    def _validate_unique_sensor_bindings(self) -> "TaskConfig":
+    def _validate_bimanual_task(self) -> "TaskConfig":
+        _validate_exact_arm_mapping(self.initial_poses, "task.initial_poses")
+        if self.modality.needs_gelsight():
+            _validate_exact_arm_mapping(self.gelsights, "task.gelsights")
         _validate_unique_nonempty(
             [settings.serial_number for settings in self.rgb_cameras.values()],
             "rgb_cameras serial_number",
@@ -401,19 +411,16 @@ class InferenceRuntimeSettings(BaseModel):
     start_countdown_sec: float = 2.0
     status_print_hz: float = 1.0
     task_name: str = "policy_run"
-    initial_eef_pose_xyz_rpy_deg: list[float] | None = None
+    initial_poses: dict[ArmId, ArmInitialPoseSettings] | None = None
     initial_move_duration_sec: float = 2.0
-    home_joint_positions_rad: list[float] | None = None
     home_joint_duration_sec: float = 4.0
     home_joint_tolerance_rad: float = 0.03
     home_joint_settle_timeout_sec: float = 8.0
     gripper_forever_closed: bool = False
-    rand_init_pose: list[float] = Field(default_factory=lambda: [0.0, 0.0, 0.0])
     modality: ModalitySettings = Field(default_factory=ModalitySettings)
     eval: EvalRuntimeSettings = Field(default_factory=EvalRuntimeSettings)
     model_input_recording: ModelInputRecordingSettings = Field(default_factory=ModelInputRecordingSettings)
     rgb_cameras: dict[str, RgbCameraSettings] = Field(default_factory=dict)
-    gelsight: GelsightSettings = Field(default_factory=GelsightSettings)
     gelsights: dict[ArmId, GelsightSettings] = Field(default_factory=dict)
     controller_state_poll_hz: float = 60.0
     initial_pose_tolerance_m: float = 0.015
@@ -428,20 +435,6 @@ class InferenceRuntimeSettings(BaseModel):
             raise ValueError("horizon values must be positive")
         return value
 
-    @field_validator("initial_eef_pose_xyz_rpy_deg")
-    @classmethod
-    def _validate_optional_initial_pose(cls, value: list[float] | None) -> list[float] | None:
-        if value is not None and len(value) != 6:
-            raise ValueError("initial_eef_pose_xyz_rpy_deg must contain exactly 6 values")
-        return value
-
-    @field_validator("home_joint_positions_rad")
-    @classmethod
-    def _validate_optional_home_joint_positions(cls, value: list[float] | None) -> list[float] | None:
-        if value is not None and len(value) != 7:
-            raise ValueError("home_joint_positions_rad must contain exactly 7 values")
-        return value
-
     @field_validator("home_joint_duration_sec", "home_joint_tolerance_rad", "home_joint_settle_timeout_sec")
     @classmethod
     def _validate_positive_home_joint_float(cls, value: float) -> float:
@@ -449,17 +442,12 @@ class InferenceRuntimeSettings(BaseModel):
             raise ValueError("home joint timing and tolerance values must be positive")
         return value
 
-    @field_validator("rand_init_pose")
-    @classmethod
-    def _validate_rand_init_pose(cls, value: list[float]) -> list[float]:
-        if len(value) != 3:
-            raise ValueError("rand_init_pose must contain exactly 3 xyz range values")
-        if any(item < 0.0 for item in value):
-            raise ValueError("rand_init_pose values must be non-negative")
-        return value
-
     @model_validator(mode="after")
-    def _validate_unique_sensor_bindings(self) -> "InferenceRuntimeSettings":
+    def _validate_bimanual_inference(self) -> "InferenceRuntimeSettings":
+        if self.initial_poses is not None:
+            _validate_exact_arm_mapping(self.initial_poses, "inference.initial_poses")
+        if self.modality.needs_gelsight():
+            _validate_exact_arm_mapping(self.gelsights, "inference.gelsights")
         _validate_unique_nonempty(
             [settings.serial_number for settings in self.rgb_cameras.values()],
             "rgb_cameras serial_number",
@@ -492,6 +480,15 @@ def _validate_unique_nonempty(values: list[str], label: str) -> None:
     duplicates = sorted({value for value in filtered if filtered.count(value) > 1})
     if duplicates:
         raise ValueError(f"Duplicate {label} binding(s): {duplicates}")
+
+
+def _validate_exact_arm_mapping(value: dict[ArmId, Any], label: str) -> None:
+    expected = {"left", "right"}
+    actual = set(value)
+    if actual != expected:
+        missing = sorted(expected - actual)
+        extra = sorted(actual - expected)
+        raise ValueError(f"{label} must contain exactly left and right; missing={missing}, extra={extra}")
 
 
 def load_task_config(path: str | Path, *, task_name_override: str | None = None) -> TaskConfig:

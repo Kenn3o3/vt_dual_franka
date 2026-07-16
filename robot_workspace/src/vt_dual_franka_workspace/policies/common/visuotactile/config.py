@@ -9,16 +9,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from ....config import PolicyConfig, WorkspaceSettings
 
 
-VisuotactileModelName = Literal[
-    "dp_bimanual",
-    "dp_manifeel",
-    "dp_equidiff_tact",
-    "act_univtac",
-    "vital_act",
-    "vital_dp",
-    "vista_so2",
-    "vista_so3",
-]
+VisuotactileModelName = Literal["dp_bimanual"]
 ActionRepresentation = Literal["pose10_rot6d_gripper", "pose7_gripper", "bimanual_pose20_rot6d_gripper"]
 ModelFamily = Literal["dp", "act", "vital", "vista"]
 
@@ -165,106 +156,11 @@ MODEL_SPECS: dict[str, VisuotactileModelSpec] = {
         camera_names=("rgb_wrist_left", "rgb_wrist_right"),
         tactile_names=("tactile_left", "tactile_right"),
     ),
-    "dp_manifeel": VisuotactileModelSpec(
-        name="dp_manifeel",
-        family="dp",
-        action_representation="pose10_rot6d_gripper",
-        default_image_size=224,
-        wrist_image_size=224,
-        tactile_image_size=224,
-        obs_horizon=2,
-        action_horizon=8,
-        vendor_subdir="DP",
-        train_backend="diffusion_policy",
-    ),
-    "dp_equidiff_tact": VisuotactileModelSpec(
-        name="dp_equidiff_tact",
-        family="dp",
-        action_representation="pose10_rot6d_gripper",
-        default_image_size=224,
-        wrist_image_size=224,
-        tactile_image_size=224,
-        obs_horizon=2,
-        action_horizon=8,
-        vendor_subdir="DP",
-        train_backend="diffusion_policy",
-    ),
-    "act_univtac": VisuotactileModelSpec(
-        name="act_univtac",
-        family="act",
-        action_representation="pose7_gripper",
-        default_image_size=256,
-        wrist_image_size=256,
-        tactile_image_size=256,
-        obs_horizon=1,
-        action_horizon=8,
-        vendor_subdir="ACT",
-        train_backend="act",
-    ),
-    "vital_act": VisuotactileModelSpec(
-        name="vital_act",
-        family="vital",
-        action_representation="pose7_gripper",
-        default_image_size=256,
-        wrist_image_size=256,
-        tactile_image_size=256,
-        obs_horizon=1,
-        action_horizon=8,
-        vendor_subdir="ViTAL",
-        train_backend="vital_act",
-    ),
-    "vital_dp": VisuotactileModelSpec(
-        name="vital_dp",
-        family="vital",
-        action_representation="pose10_rot6d_gripper",
-        default_image_size=256,
-        wrist_image_size=256,
-        tactile_image_size=256,
-        obs_horizon=2,
-        action_horizon=8,
-        vendor_subdir="ViTAL",
-        train_backend="vital_dp",
-    ),
-    "vista_so2": VisuotactileModelSpec(
-        name="vista_so2",
-        family="vista",
-        action_representation="pose10_rot6d_gripper",
-        default_image_size=224,
-        wrist_image_size=224,
-        tactile_image_size=224,
-        obs_horizon=2,
-        action_horizon=8,
-        vendor_subdir="VISTA",
-        train_backend="vista",
-    ),
-    "vista_so3": VisuotactileModelSpec(
-        name="vista_so3",
-        family="vista",
-        action_representation="pose10_rot6d_gripper",
-        default_image_size=224,
-        wrist_image_size=224,
-        tactile_image_size=224,
-        obs_horizon=2,
-        action_horizon=8,
-        vendor_subdir="VISTA",
-        train_backend="vista",
-    ),
 }
 
 
 def normalize_model_name(value: str) -> VisuotactileModelName:
     key = value.strip().lower().replace("-", "_")
-    aliases = {
-        "manifeel": "dp_manifeel",
-        "equidiff_tact": "dp_equidiff_tact",
-        "act": "act_univtac",
-        "univtac_act": "act_univtac",
-        "vital": "vital_act",
-        "vital_diffusion": "vital_dp",
-        "so2": "vista_so2",
-        "so3": "vista_so3",
-    }
-    key = aliases.get(key, key)
     if key not in MODEL_SPECS:
         supported = ", ".join(sorted(MODEL_SPECS))
         raise ValueError(f"Unsupported visuotactile model {value!r}. Supported models: {supported}")

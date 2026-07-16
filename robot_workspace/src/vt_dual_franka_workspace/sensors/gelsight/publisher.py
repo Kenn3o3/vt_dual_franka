@@ -71,9 +71,16 @@ class GelsightPublisher:
                     "frame_height": int(frame.shape[0]),
                     "dtype": str(frame.dtype),
                 }
+                stream_name = (
+                    self.frame_buffer.name
+                    if self.frame_buffer is not None
+                    else self.episode_image_recorder.stream_name
+                    if self.episode_image_recorder is not None
+                    else self.settings.camera_name
+                )
                 standardized = standardize_camera_frame(
                     frame,
-                    stream_name="tactile_left",
+                    stream_name=stream_name,
                     camera_name=self.settings.camera_name,
                     source_color="BGR",
                     captured_wall_time=captured_wall_time,

@@ -11,6 +11,7 @@ from ....policies.base import Policy
 from .bimanual_runtime import ARM_ORDER, bimanual_states_to_20d, decode_bimanual_20d_action
 from .config import VisuotactilePolicySettings, get_model_spec
 from .runtime import TorchScriptVisuotactileBackend, load_runtime_manifests
+from .vendor_dp_runtime import VendorDPCheckpointBackend, can_load_vendor_dp_checkpoint
 
 
 class BimanualVisuotactilePolicy(Policy):
@@ -27,7 +28,25 @@ class BimanualVisuotactilePolicy(Policy):
         if self.model_spec.name != "dp_bimanual":
             raise ValueError("BimanualVisuotactilePolicy currently supports only model='dp_bimanual'")
         self.manifests = load_runtime_manifests(self.checkpoint_dir)
-        self.backend = TorchScriptVisuotactileBackend(self.checkpoint_dir, device=settings.device, manifests=self.manifests)
+        if can_load_vendor_dp_checkpoint(
+            self.checkpoint_dir,
+            manifests=self.manifests,
+            checkpoint_file=settings.checkpoint_file,
+        ):
+            self.backend = VendorDPCheckpointBackend(
+                self.checkpoint_dir,
+                device=settings.device,
+                manifests=self.manifests,
+                checkpoint_file=settings.checkpoint_file,
+                temporal_agg=settings.temporal_agg,
+                temporal_agg_k=settings.temporal_agg_k,
+            )
+        else:
+            self.backend = TorchScriptVisuotactileBackend(
+                self.checkpoint_dir,
+                device=settings.device,
+                manifests=self.manifests,
+            )
         self.gripper_open_width_m = float(gripper_open_width_m)
         self.target_duration_sec = float(settings.target_duration_sec or 0.1)
         self.gripper_close_threshold = float(settings.gripper_close_threshold)
@@ -38,17 +57,22 @@ class BimanualVisuotactilePolicy(Policy):
         actions: list[dict[str, Any]] = []
         for row in chunk:
             decoded = decode_bimanual_20d_action(np.asarray(row, dtype=np.float64))
+            gripper_closed = {
+                arm: decoded.gripper_closedness[arm] >= self.gripper_close_threshold for arm in ARM_ORDER
+            }
             actions.append(
                 {
                     "target_tcp_by_arm": decoded.target_tcp,
                     "target_duration_sec": self.target_duration_sec,
+                    "gripper_closed_by_arm": gripper_closed,
+                    "gripper_width_by_arm": {
+                        arm: 0.0 if gripper_closed[arm] else self.gripper_open_width_m for arm in ARM_ORDER
+                    },
                     "metadata": {
                         **decoded.metadata,
                         "visuotactile_model": self.model_spec.name,
                         "gripper_closedness": decoded.gripper_closedness,
-                        "gripper_closed": {
-                            arm: decoded.gripper_closedness[arm] >= self.gripper_close_threshold for arm in ARM_ORDER
-                        },
+                        "gripper_closed": gripper_closed,
                     },
                 }
             )

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from vt_dual_franka_shared.models import ArmId
 
@@ -24,27 +24,7 @@ class BackendSettings(BaseModel):
     robot_port: int = 50051
     gripper_ip: str = "127.0.0.1"
     gripper_port: int = 50052
-
-
-class RosGripperActionSettings(BaseModel):
-    action_namespace: str = "/franka_gripper"
-    joint_states_topic: str = "/franka_gripper/joint_states"
-    max_gripper_width: float = 0.078
-    close_width_threshold: float = 0.001
-    default_velocity: float = 0.05
-    default_force_limit: float = 7.0
-    grasp_epsilon_inner: float = 0.001
-    grasp_epsilon_outer: float = 0.08
-    action_server_timeout_sec: float = 2.0
-    action_result_timeout_sec: float = 10.0
-    state_stale_after_sec: float = 1.0
-    home_on_start: bool = False
-
-
-class RosGripperTestbedSettings(BaseModel):
-    server: ServerSettings = Field(default_factory=lambda: ServerSettings(port=8094))
-    ros: RosGripperActionSettings = Field(default_factory=RosGripperActionSettings)
-    control_frequency_hz: float = 60.0
+    expected_physical_robot_ip: Optional[str] = None
 
 
 class ControlSettings(BaseModel):
@@ -76,3 +56,37 @@ class ControllerSettings(BaseModel):
     backend: BackendSettings = Field(default_factory=BackendSettings)
     control: ControlSettings = Field(default_factory=ControlSettings)
     teleop: TeleopGripperDefaults = Field(default_factory=TeleopGripperDefaults)
+
+    @model_validator(mode="after")
+    def _validate_fixed_dual_endpoint(self) -> "ControllerSettings":
+        if self.backend.kind != "polymetis":
+            return self
+        expected = {
+            "left": {
+                "server_port": 8092,
+                "robot_port": 50051,
+                "gripper_port": 50052,
+                "physical_robot_ip": "172.16.0.2",
+            },
+            "right": {
+                "server_port": 8093,
+                "robot_port": 50061,
+                "gripper_port": 50062,
+                "physical_robot_ip": "172.16.1.2",
+            },
+        }[self.arm_id]
+        actual = {
+            "server_port": self.server.port,
+            "robot_port": self.backend.robot_port,
+            "gripper_port": self.backend.gripper_port,
+            "physical_robot_ip": self.backend.expected_physical_robot_ip,
+        }
+        if actual != expected:
+            raise ValueError(
+                f"{self.arm_id} controller endpoint mismatch: expected={expected}, actual={actual}"
+            )
+        if self.backend.robot_ip not in {"127.0.0.1", "localhost"}:
+            raise ValueError("Controller must connect to its local Polymetis robot server")
+        if self.backend.gripper_ip not in {"127.0.0.1", "localhost"}:
+            raise ValueError("Controller must connect to its local Polymetis gripper server")
+        return self

@@ -10,19 +10,7 @@ def resolve_policy(
     workspace: WorkspaceSettings,
 ) -> Policy:
     policy_type = policy_config.type.strip().lower()
-    if policy_type == "replay":
-        from .replay.policy import ReplayPolicy
-
-        return ReplayPolicy.from_config(policy_config, inference_config, workspace)
-    if policy_type == "mpd":
-        from .mpd.policy import MPDPolicy
-
-        return MPDPolicy.from_config(policy_config, inference_config, workspace)
-    if policy_type in {"visuotactile", "vt", "univtac"}:
-        from .visuotactile.policy import VisuotactilePolicy
-
-        return VisuotactilePolicy.from_config(policy_config, inference_config, workspace)
-    if policy_type in {"bimanual_visuotactile", "bimanual_vt", "dp_bimanual"}:
+    if policy_type == "dp_bimanual":
         from .common.visuotactile.bimanual_policy import BimanualVisuotactilePolicy
         from .common.visuotactile.config import VisuotactilePolicySettings
 
@@ -32,4 +20,6 @@ def resolve_policy(
             fallback_task_name=inference_config.task_name,
         )
         return BimanualVisuotactilePolicy(settings, checkpoint_path, gripper_open_width_m=workspace.teleop.max_gripper_width)
-    raise ValueError(f"Unsupported policy type: {policy_config.type!r}")
+    raise ValueError(
+        f"Unsupported policy type {policy_config.type!r}; vt_dual_franka supports only 'dp_bimanual'"
+    )

@@ -36,7 +36,7 @@ class VendorDPCheckpointBackend:
         self.checkpoint_dir = Path(checkpoint_dir)
         self.manifests = manifests or load_runtime_manifests(self.checkpoint_dir)
         self.model_spec = get_model_spec(self.manifests.policy["model"])
-        if self.model_spec.name not in {"dp_manifeel", "dp_equidiff_tact", "vital_dp"}:
+        if self.model_spec.name not in {"dp_bimanual", "dp_manifeel", "dp_equidiff_tact", "vital_dp"}:
             raise ValueError(f"VendorDPCheckpointBackend does not support {self.model_spec.name!r}")
         self.obs_horizon = int(self.manifests.policy.get("obs_horizon", self.model_spec.obs_horizon))
         self.action_horizon = int(self.manifests.policy.get("action_horizon", self.model_spec.action_horizon))
@@ -166,6 +166,8 @@ class VendorDPCheckpointBackend:
     def _inputs_to_vendor_obs(self, inputs: dict[str, np.ndarray]) -> dict[str, Any]:
         torch = self._torch
         assert torch is not None
+        if self.model_spec.name == "dp_bimanual":
+            return self._bimanual_inputs_to_vendor_obs(inputs)
         rgb = np.asarray(inputs["rgb_wrist"], dtype=np.float32)
         gelsight = np.asarray(inputs["gelsight"], dtype=np.float32)
         qpos = np.asarray(inputs["qpos"], dtype=np.float32)
@@ -199,6 +201,32 @@ class VendorDPCheckpointBackend:
             else:
                 raise KeyError(f"Unsupported DP lowdim observation key: {key}")
             obs[key] = torch.from_numpy(value).unsqueeze(0).to(self._device)
+        return obs
+
+    def _bimanual_inputs_to_vendor_obs(self, inputs: dict[str, np.ndarray]) -> dict[str, Any]:
+        torch = self._torch
+        assert torch is not None
+        sources = {
+            "robot0_eye_in_hand_image": np.asarray(inputs["rgb_wrist_left"], dtype=np.float32),
+            "robot1_eye_in_hand_image": np.asarray(inputs["rgb_wrist_right"], dtype=np.float32),
+            "robot0_tactile_left_image": np.asarray(inputs["tactile_left"], dtype=np.float32),
+            "robot1_tactile_right_image": np.asarray(inputs["tactile_right"], dtype=np.float32),
+        }
+        qpos = np.asarray(inputs["qpos"], dtype=np.float32)
+        if qpos.ndim != 2 or qpos.shape[1] != 20:
+            raise ValueError(f"qpos must be [T,20] for dp_bimanual, got {qpos.shape}")
+        obs: dict[str, Any] = {}
+        for key, shape in self._image_shapes.items():
+            if key not in sources:
+                raise KeyError(f"Unsupported dp_bimanual image observation key: {key}")
+            source = sources[key]
+            if source.ndim != 4 or source.shape[-1] != 3:
+                raise ValueError(f"{key} must be [T,H,W,3], got {source.shape}")
+            obs[key] = self._image_tensor(source, expected_shape=shape)
+        for key in self._lowdim_keys:
+            if key != "qpos":
+                raise KeyError(f"Unsupported dp_bimanual lowdim observation key: {key}")
+            obs[key] = torch.from_numpy(qpos).unsqueeze(0).to(self._device)
         return obs
 
     def _image_tensor(self, images: np.ndarray, *, expected_shape: tuple[int, int, int]) -> Any:
@@ -235,7 +263,7 @@ def can_load_vendor_dp_checkpoint(
         spec = get_model_spec(manifests.policy["model"])
     except Exception:
         return False
-    return spec.name in {"dp_manifeel", "dp_equidiff_tact", "vital_dp"}
+    return spec.name in {"dp_bimanual", "dp_manifeel", "dp_equidiff_tact", "vital_dp"}
 
 
 def _resolve_dp_checkpoint_path(

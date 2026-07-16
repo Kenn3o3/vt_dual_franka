@@ -21,7 +21,6 @@ class ArmCalibration:
     calibration_dir: Path
     arm_id: ArmId = "left"
     external_camera_to_robot_base: np.ndarray = field(init=False)
-    wrist_camera_to_tcp: np.ndarray = field(init=False)
     world_to_robot_base: np.ndarray = field(init=False)
     world_to_external_camera: np.ndarray = field(init=False)
     external_camera_to_world: np.ndarray = field(init=False)
@@ -41,9 +40,6 @@ class ArmCalibration:
         prefix = self.arm_id
         self.external_camera_to_robot_base = _load_matrix(
             calibration_dir / f"external_camera_to_{prefix}_robot_base_transform.json"
-        )
-        self.wrist_camera_to_tcp = _load_matrix(
-            calibration_dir / f"{prefix}_wrist_camera_to_{prefix}_robot_tcp_transform.json"
         )
         self.world_to_robot_base = _load_matrix(calibration_dir / f"world_to_{prefix}_robot_base_transform.json")
         self.world_to_external_camera = np.linalg.inv(self.external_camera_to_robot_base) @ self.world_to_robot_base
@@ -108,9 +104,6 @@ class BimanualCalibration:
                 np.linalg.norm(self.left.robot_base_to_world[:3, 3] - self.right.robot_base_to_world[:3, 3])
             ),
         }
-
-
-SingleArmCalibration = ArmCalibration
 
 
 def _matrix_to_quat_wxyz(matrix: np.ndarray) -> np.ndarray:

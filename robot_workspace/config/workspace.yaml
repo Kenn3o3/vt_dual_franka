@@ -1,17 +1,12 @@
-controller:
-  host: 127.0.0.1
-  port: 8092
-  request_timeout_sec: 0.1
-
 arms:
   left:
     arm_id: left
-    host: 127.0.0.1
+    host: 10.0.0.1
     port: 8092
     request_timeout_sec: 0.1
   right:
     arm_id: right
-    host: 127.0.0.1
+    host: 10.0.0.1
     port: 8093
     request_timeout_sec: 0.1
 
@@ -63,7 +58,7 @@ operator_ui:
   port: 8083
   log_buffer_size: 1000
   snapshot_max_age_sec: 1.5
-  preview_camera_role: wrist
+  preview_camera_role: left_wrist
   preview_refresh_hz: 5.0
 
 calibration:
