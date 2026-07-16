@@ -4,17 +4,14 @@
 
 ## Controller PC
 
-每个 Controller PC terminal 都先进入 controller 代码目录并激活 Polymetis 环境：
-
 ```bash
-source /home/zhenya/miniforge3/etc/profile.d/conda.sh
-conda activate polymetis-local
-cd /home/zhenya/kenny/visuotact/vt_dual_franka/robot_controller
+cd /home/medair/vt_dual_franka/robot_controller
 ```
 
 ### Terminal C1: left Polymetis robot server
 
 ```bash
+conda activate polymetis-local
 launch_robot.py \
   robot_client=franka_hardware \
   robot_client.executable_cfg.robot_ip=172.16.0.2
@@ -23,6 +20,7 @@ launch_robot.py \
 ### Terminal C2: left Polymetis gripper server
 
 ```bash
+conda activate polymetis-local
 launch_gripper.py \
   gripper=franka_hand \
   gripper.executable_cfg.robot_ip=172.16.0.2
@@ -33,6 +31,7 @@ launch_gripper.py \
 The right arm must use a different local Polymetis robot server port from the left arm. `controller_right.yaml` currently expects `127.0.0.1:50061`.
 
 ```bash
+conda activate polymetis-local
 launch_robot.py \
   robot_client=franka_hardware \
   robot_client.executable_cfg.robot_ip=172.16.1.2 \
@@ -45,6 +44,7 @@ launch_robot.py \
 The right gripper must use a different local Polymetis gripper server port from the left gripper. `controller_right.yaml` currently expects `127.0.0.1:50062`.
 
 ```bash
+conda activate polymetis-local
 launch_gripper.py \
   gripper=franka_hand \
   gripper.executable_cfg.robot_ip=172.16.1.2 \
@@ -65,9 +65,8 @@ For `launch_robot.py`, both `port=50061` and `robot_client.executable_cfg.server
 ### Terminal C5: dual Controller API
 
 ```bash
-source /home/zhenya/miniforge3/etc/profile.d/conda.sh
 conda activate polymetis-local
-cd /home/zhenya/kenny/visuotact/vt_dual_franka/robot_controller
+cd /home/medair/vt_dual_franka/robot_controller
 
 export PYTHONPATH=../shared/src:src:${PYTHONPATH:-}
 python scripts/preflight_dual_network.py
