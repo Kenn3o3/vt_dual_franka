@@ -36,7 +36,8 @@ The right arm must use a different local Polymetis robot server port from the le
 launch_robot.py \
   robot_client=franka_hardware \
   robot_client.executable_cfg.robot_ip=172.16.1.2 \
-  <POLYMETIS_ROBOT_SERVER_PORT_OVERRIDE_FOR_50061>
+  port=50061 \
+  robot_client.executable_cfg.server_address=localhost:50061
 ```
 
 ### Terminal C4: right Polymetis gripper server
@@ -47,10 +48,10 @@ The right gripper must use a different local Polymetis gripper server port from 
 launch_gripper.py \
   gripper=franka_hand \
   gripper.executable_cfg.robot_ip=172.16.1.2 \
-  <POLYMETIS_GRIPPER_SERVER_PORT_OVERRIDE_FOR_50062>
+  port=50062
 ```
 
-Note: the exact Polymetis Hydra key for overriding the local gRPC port depends on the installed Polymetis version. Before hardware use, run `launch_robot.py --help` / `launch_gripper.py --help` in the Polymetis environment and replace the placeholders above. The important invariant is:
+The important invariant is:
 
 ```text
 left  robot server   -> 127.0.0.1:50051
@@ -59,7 +60,7 @@ right robot server   -> 127.0.0.1:50061
 right gripper server -> 127.0.0.1:50062
 ```
 
-If your Polymetis install cannot override these ports, change `robot_controller/config/controller_right.yaml` to match the actual right-arm Polymetis ports instead.
+For `launch_robot.py`, both `port=50061` and `robot_client.executable_cfg.server_address=localhost:50061` are needed: the first changes the server bind port, and the second makes the Franka hardware client connect to that same local server.
 
 ### Terminal C5: dual Controller API
 
