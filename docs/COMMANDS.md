@@ -6,6 +6,7 @@
 
 ```bash
 cd /home/medair/vt_dual_franka/robot_controller
+conda activate polymetis-local
 ```
 
 ### Terminal C1: left Polymetis robot server
