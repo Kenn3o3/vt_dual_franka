@@ -64,6 +64,8 @@ For `launch_robot.py robot_client=franka_hardware`, `port=50061` is enough: that
 
 ### Terminal C5: dual Controller API
 
+Run this only after C1-C4 are already up. Default preflight expects Polymetis ports `50051/50052/50061/50062` to be listening, and Controller HTTP ports `8092/8093` to be free.
+
 ```bash
 conda activate polymetis-local
 cd /home/medair/vt_dual_franka/robot_controller
@@ -71,6 +73,12 @@ cd /home/medair/vt_dual_franka/robot_controller
 export PYTHONPATH=../shared/src:src:${PYTHONPATH:-}
 python scripts/preflight_dual_network.py
 scripts/run_dual_controllers.sh
+```
+
+If you want to check that ports are free before launching C1-C4, use:
+
+```bash
+python scripts/preflight_dual_network.py --before-polymetis
 ```
 
 Expected Controller API endpoints:

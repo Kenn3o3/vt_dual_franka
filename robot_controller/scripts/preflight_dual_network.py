@@ -25,14 +25,29 @@ DEFAULT_ENDPOINTS = (
 def main() -> None:
     parser = argparse.ArgumentParser(description="Check dual Franka host networking before launching controllers.")
     parser.add_argument("--skip-ping", action="store_true", help="Skip ICMP reachability checks.")
+    parser.add_argument(
+        "--before-polymetis",
+        action="store_true",
+        help="Run before C1-C4; require all local Polymetis and Controller ports to be free.",
+    )
     args = parser.parse_args()
     failures: list[str] = []
     for endpoint in DEFAULT_ENDPOINTS:
         if not _host_has_ip(endpoint.host_ip):
             failures.append(f"{endpoint.name}: host IP {endpoint.host_ip} is not configured")
-        for port in (endpoint.controller_port, endpoint.robot_port, endpoint.gripper_port):
-            if _port_in_use("127.0.0.1", port):
-                failures.append(f"{endpoint.name}: localhost:{port} is already in use")
+        if _port_in_use("127.0.0.1", endpoint.controller_port):
+            failures.append(f"{endpoint.name}: controller port localhost:{endpoint.controller_port} is already in use")
+        if args.before_polymetis:
+            for port in (endpoint.robot_port, endpoint.gripper_port):
+                if _port_in_use("127.0.0.1", port):
+                    failures.append(f"{endpoint.name}: Polymetis port localhost:{port} is already in use")
+        else:
+            for label, port in (("robot", endpoint.robot_port), ("gripper", endpoint.gripper_port)):
+                if not _port_in_use("127.0.0.1", port):
+                    failures.append(
+                        f"{endpoint.name}: Polymetis {label} server is not reachable on localhost:{port}; "
+                        "start C1-C4 first"
+                    )
         if not args.skip_ping and not _ping(endpoint.robot_ip):
             failures.append(f"{endpoint.name}: robot {endpoint.robot_ip} did not respond to ping")
     if failures:
