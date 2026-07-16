@@ -13,7 +13,7 @@ conda activate polymetis-local
 
 ```bash
 conda activate polymetis-local
-launch_robot.py \
+taskset -c 2,6 launch_robot.py \
   robot_client=franka_hardware \
   robot_client.executable_cfg.robot_ip=172.16.0.2
 ```
@@ -22,7 +22,7 @@ launch_robot.py \
 
 ```bash
 conda activate polymetis-local
-launch_gripper.py \
+taskset -c 1,5 launch_gripper.py \
   gripper=franka_hand \
   gripper.executable_cfg.robot_ip=172.16.0.2
 ```
@@ -33,7 +33,7 @@ The right arm must use a different local Polymetis robot server port from the le
 
 ```bash
 conda activate polymetis-local
-launch_robot.py \
+taskset -c 3,7 launch_robot.py \
   robot_client=franka_hardware \
   robot_client.executable_cfg.robot_ip=172.16.1.2 \
   port=50061
@@ -45,7 +45,7 @@ The right gripper must use a different local Polymetis gripper server port from 
 
 ```bash
 conda activate polymetis-local
-launch_gripper.py \
+taskset -c 1,5 launch_gripper.py \
   gripper=franka_hand \
   gripper.executable_cfg.robot_ip=172.16.1.2 \
   port=50062
@@ -62,9 +62,11 @@ right gripper server -> 127.0.0.1:50062
 
 For `launch_robot.py robot_client=franka_hardware`, `port=50061` is enough: that config sets `robot_client.executable_cfg.control_port: ${port}`, so overriding the top-level `port` updates both the local Polymetis server bind port and the Franka hardware client control port.
 
-### Terminal C5: dual Controller API
+### Terminals C5-left and C5-right: Controller APIs
 
-Run this only after C1-C4 are already up. Default preflight expects Polymetis ports `50051/50052/50061/50062` to be listening, and Controller HTTP ports `8092/8093` to be free.
+Run these only after C1-C4 are already up. The controller PC has four physical cores with SMT sibling pairs `(0,4)`, `(1,5)`, `(2,6)`, and `(3,7)`. Reserve `(2,6)` for the left robot, `(3,7)` for the right robot, `(1,5)` for the gripper and Controller API processes, and leave `(0,4)` available for the OS and network IRQs.
+
+First run the preflight once:
 
 ```bash
 conda activate polymetis-local
@@ -72,8 +74,27 @@ cd /home/medair/vt_dual_franka/robot_controller
 
 export PYTHONPATH=../shared/src:src:${PYTHONPATH:-}
 python scripts/preflight_dual_network.py
-scripts/run_dual_controllers.sh
 ```
+
+Then start the left Controller API in terminal C5-left:
+
+```bash
+taskset -c 1,5 python -m vt_dual_franka_controller.cli run \
+  --config config/controller_left.yaml
+```
+
+Wait at least 10 seconds and confirm that neither robot reports `communication_constraints_violation`. Then start the right Controller API in a separate terminal C5-right:
+
+```bash
+conda activate polymetis-local
+cd /home/medair/vt_dual_franka/robot_controller
+
+export PYTHONPATH=../shared/src:src:${PYTHONPATH:-}
+taskset -c 1,5 python -m vt_dual_franka_controller.cli run \
+  --config config/controller_right.yaml
+```
+
+Do not use `scripts/run_dual_controllers.sh` during hardware commissioning: it starts both Controller APIs simultaneously, which can create a CPU and memory-load spike while both Cartesian impedance controllers are loaded.
 
 If you want to check that ports are free before launching C1-C4, use:
 
