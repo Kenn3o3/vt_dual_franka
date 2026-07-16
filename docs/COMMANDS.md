@@ -35,8 +35,7 @@ conda activate polymetis-local
 launch_robot.py \
   robot_client=franka_hardware \
   robot_client.executable_cfg.robot_ip=172.16.1.2 \
-  port=50061 \
-  robot_client.executable_cfg.server_address=localhost:50061
+  port=50061
 ```
 
 ### Terminal C4: right Polymetis gripper server
@@ -60,7 +59,7 @@ right robot server   -> 127.0.0.1:50061
 right gripper server -> 127.0.0.1:50062
 ```
 
-For `launch_robot.py`, both `port=50061` and `robot_client.executable_cfg.server_address=localhost:50061` are needed: the first changes the server bind port, and the second makes the Franka hardware client connect to that same local server.
+For `launch_robot.py robot_client=franka_hardware`, `port=50061` is enough: that config sets `robot_client.executable_cfg.control_port: ${port}`, so overriding the top-level `port` updates both the local Polymetis server bind port and the Franka hardware client control port.
 
 ### Terminal C5: dual Controller API
 

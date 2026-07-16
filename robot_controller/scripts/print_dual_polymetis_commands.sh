@@ -3,9 +3,8 @@ set -euo pipefail
 
 cat <<'EOF'
 # Controller PC common setup for each terminal:
-source /home/zhenya/miniforge3/etc/profile.d/conda.sh
 conda activate polymetis-local
-cd /home/zhenya/kenny/visuotact/vt_dual_franka/robot_controller
+cd /home/medair/vt_dual_franka/robot_controller
 
 # Terminal P1: left Polymetis robot server
 launch_robot.py \
@@ -21,8 +20,7 @@ launch_gripper.py \
 launch_robot.py \
   robot_client=franka_hardware \
   robot_client.executable_cfg.robot_ip=172.16.1.2 \
-  port=50061 \
-  robot_client.executable_cfg.server_address=localhost:50061
+  port=50061
 
 # Terminal P4: right Polymetis gripper server
 launch_gripper.py \
