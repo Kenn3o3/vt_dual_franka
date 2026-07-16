@@ -1,4 +1,4 @@
-name: vt-franka-workspace
+name: vt-dual-franka-workspace
 channels:
   - conda-forge
 dependencies:

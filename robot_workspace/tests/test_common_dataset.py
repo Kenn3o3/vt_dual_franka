@@ -5,8 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
-from vt_franka_workspace.datasets import MakeDatasetConfig, make_common_dataset
-from vt_franka_workspace.recording.image_io import read_rgb_image, write_rgb_jpeg
+from vt_dual_franka_workspace.datasets import MakeDatasetConfig, make_common_dataset
+from vt_dual_franka_workspace.recording.image_io import read_rgb_image, write_rgb_jpeg
 
 
 def test_make_common_dataset_causal_aligns_and_copies_standard_images(tmp_path: Path) -> None:

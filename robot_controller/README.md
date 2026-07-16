@@ -1,4 +1,4 @@
-# VT Franka Controller
+# VT Dual Franka Controller
 
 This package is meant for the Franka-side machine only.
 

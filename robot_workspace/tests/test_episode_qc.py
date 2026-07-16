@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from vt_franka_workspace.recording import analyze_episode_quality, format_episode_qc_summary
+from vt_dual_franka_workspace.recording import analyze_episode_quality, format_episode_qc_summary
 
 
 def _write_jsonl(path: Path, records: list[dict]) -> None:

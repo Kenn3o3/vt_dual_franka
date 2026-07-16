@@ -2,11 +2,11 @@ from fastapi.testclient import TestClient
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from vt_franka_shared.models import ControllerState
-from vt_franka_shared.transforms import SingleArmCalibration
-from vt_franka_workspace.operator import OperatorLogBuffer
-from vt_franka_workspace.settings import TeleopSettings
-from vt_franka_workspace.teleop.quest_server import QuestTeleopService, create_teleop_app
+from vt_dual_franka_shared.models import ControllerState
+from vt_dual_franka_shared.transforms import SingleArmCalibration
+from vt_dual_franka_workspace.operator import OperatorLogBuffer
+from vt_dual_franka_workspace.settings import TeleopSettings
+from vt_dual_franka_workspace.teleop.quest_server import QuestTeleopService, create_teleop_app
 
 
 class FakeController:
@@ -36,7 +36,7 @@ class FakeController:
 
 def test_relative_target_swaps_xy_translation_and_flips_forward_axis():
     calibration = SingleArmCalibration.from_dir(
-        "/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/calibration/v6"
+        "/home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/config/calibration/v6"
     )
     controller = FakeController()
     service = QuestTeleopService(TeleopSettings(relative_translation_scale=1.0), controller, calibration)
@@ -51,7 +51,7 @@ def test_relative_target_swaps_xy_translation_and_flips_forward_axis():
 
 def test_relative_rotation_preserves_latest_axis_mapping_and_flips_roll():
     calibration = SingleArmCalibration.from_dir(
-        "/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/calibration/v6"
+        "/home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/config/calibration/v6"
     )
     controller = FakeController()
     service = QuestTeleopService(TeleopSettings(relative_rotation_scale=1.0), controller, calibration)
@@ -85,7 +85,7 @@ def test_relative_rotation_preserves_latest_axis_mapping_and_flips_roll():
 
 def test_teleop_endpoint_accepts_flattened_tactar_payload():
     calibration = SingleArmCalibration.from_dir(
-        "/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/calibration/v6"
+        "/home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/config/calibration/v6"
     )
     controller = FakeController()
     service = QuestTeleopService(TeleopSettings(relative_translation_scale=1.0), controller, calibration)
@@ -110,7 +110,7 @@ def test_teleop_endpoint_accepts_flattened_tactar_payload():
 
 def test_teleop_app_can_mount_operator_routes():
     calibration = SingleArmCalibration.from_dir(
-        "/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/calibration/v6"
+        "/home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/config/calibration/v6"
     )
     controller = FakeController()
     service = QuestTeleopService(TeleopSettings(relative_translation_scale=1.0), controller, calibration)
@@ -178,7 +178,7 @@ def test_teleop_app_can_mount_operator_routes():
 
 def test_teleop_forever_closed_records_closed_and_suppresses_open():
     calibration = SingleArmCalibration.from_dir(
-        "/home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/calibration/v6"
+        "/home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/config/calibration/v6"
     )
     controller = FakeController()
     records = []

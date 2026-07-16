@@ -1,6 +1,6 @@
 import pytest
 
-from vt_franka_shared.models import GripperTestbedTargetCommand, ResetCommand, parse_unity_teleop_message
+from vt_dual_franka_shared.models import GripperTestbedTargetCommand, ResetCommand, parse_unity_teleop_message
 
 
 def test_parse_unity_teleop_message_accepts_nested_payload():

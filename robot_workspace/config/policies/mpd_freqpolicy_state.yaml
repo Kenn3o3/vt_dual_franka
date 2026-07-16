@@ -1,5 +1,5 @@
 type: mpd
-checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/put_cup_on_plate/mpd/freqpolicy/freqpolicy_state_3000/model_epoch_1000.pth
+checkpoint_path: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/checkpoints/put_cup_on_plate/mpd/freqpolicy/freqpolicy_state_3000/model_epoch_1000.pth
 config:
   algorithm: freqpolicy
   task_name: put_cup_on_plate

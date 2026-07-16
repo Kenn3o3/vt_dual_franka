@@ -6,12 +6,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from vt_franka_shared.models import ControllerState
-from vt_franka_workspace.collection import DataCollector
-from vt_franka_workspace.config import CollectionRuntimeSettings, ModalitySettings, RgbCameraSettings, TaskConfig, WorkspaceSettings
-from vt_franka_workspace.operator import OperatorActionError
-from vt_franka_workspace.recording import EpisodeImageStreamRecorder, RunSessionManager
-from vt_franka_workspace.runtime import LiveSampleBuffer, eef_xyz_rpy_deg_to_tcp_pose
+from vt_dual_franka_shared.models import ControllerState
+from vt_dual_franka_workspace.collection import DataCollector
+from vt_dual_franka_workspace.config import CollectionRuntimeSettings, ModalitySettings, RgbCameraSettings, TaskConfig, WorkspaceSettings
+from vt_dual_franka_workspace.operator import OperatorActionError
+from vt_dual_franka_workspace.recording import EpisodeImageStreamRecorder, RunSessionManager
+from vt_dual_franka_workspace.runtime import LiveSampleBuffer, eef_xyz_rpy_deg_to_tcp_pose
 
 
 class FakeController:
@@ -354,15 +354,15 @@ def test_data_collector_starts_only_modality_requested_cameras(tmp_path: Path, m
         def get_gripper_status(self):
             return {}
 
-    monkeypatch.setattr("vt_franka_workspace.collection.data_collector.StateBridge", FakeBridge)
-    monkeypatch.setattr("vt_franka_workspace.collection.data_collector.ManagedUvicornServer", FakeTeleopServer)
-    monkeypatch.setattr("vt_franka_workspace.collection.data_collector.QuestTeleopService", FakeTeleopService)
+    monkeypatch.setattr("vt_dual_franka_workspace.collection.data_collector.StateBridge", FakeBridge)
+    monkeypatch.setattr("vt_dual_franka_workspace.collection.data_collector.ManagedUvicornServer", FakeTeleopServer)
+    monkeypatch.setattr("vt_dual_franka_workspace.collection.data_collector.QuestTeleopService", FakeTeleopService)
     monkeypatch.setattr(
-        "vt_franka_workspace.collection.data_collector.build_rgb_camera_recorder",
+        "vt_dual_franka_workspace.collection.data_collector.build_rgb_camera_recorder",
         lambda spec, **kwargs: type("Service", (), {"run": lambda self, stop_event=None: None})(),
     )
     monkeypatch.setattr(
-        "vt_franka_workspace.collection.data_collector.start_thread_worker",
+        "vt_dual_franka_workspace.collection.data_collector.start_thread_worker",
         lambda workers, name, target, required: started.append(name),
     )
 

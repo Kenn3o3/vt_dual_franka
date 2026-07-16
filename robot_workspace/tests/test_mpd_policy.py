@@ -7,24 +7,24 @@ from typing import Any
 import numpy as np
 import pytest
 
-from vt_franka_workspace.config import InferenceRuntimeSettings, PolicyConfig, WorkspaceSettings
-from vt_franka_workspace.policies import resolve_policy
-from vt_franka_workspace.policies.mpd.config import (
+from vt_dual_franka_workspace.config import InferenceRuntimeSettings, PolicyConfig, WorkspaceSettings
+from vt_dual_franka_workspace.policies import resolve_policy
+from vt_dual_franka_workspace.policies.mpd.config import (
     ACTION_CONVENTION_OPEN_FRACTION,
     checkpoint_run_dir,
     default_checkpoint_path,
     get_policy_spec,
     normalize_algorithm_name,
 )
-from vt_franka_workspace.policies.mpd.data import PrepareMPDDatasetConfig, prepare_mpd_dataset
-from vt_franka_workspace.policies.mpd.math import pose7d_and_gripper_to_tcp_state, tcp_state_to_pose7d_and_gripper
-from vt_franka_workspace.policies.mpd.policy import MPDPolicy, MPDRuntimeSpec
-from vt_franka_workspace.policies.mpd.smooth_gripper_dataset import (
+from vt_dual_franka_workspace.policies.mpd.data import PrepareMPDDatasetConfig, prepare_mpd_dataset
+from vt_dual_franka_workspace.policies.mpd.math import pose7d_and_gripper_to_tcp_state, tcp_state_to_pose7d_and_gripper
+from vt_dual_franka_workspace.policies.mpd.policy import MPDPolicy, MPDRuntimeSpec
+from vt_dual_franka_workspace.policies.mpd.smooth_gripper_dataset import (
     SmoothGripperDatasetConfig,
     build_transition_ramp,
     smooth_gripper_dataset,
 )
-from vt_franka_workspace.policies.mpd.train import build_train_command, build_train_config_from_workspace
+from vt_dual_franka_workspace.policies.mpd.train import build_train_command, build_train_config_from_workspace
 
 
 class FakeMPDBackend:
@@ -374,7 +374,7 @@ def test_registry_resolves_mpd_policy(monkeypatch):
             calls["args"] = (policy_config, inference_config, workspace)
             return "mpd-policy"
 
-    monkeypatch.setattr("vt_franka_workspace.policies.mpd.policy.MPDPolicy", FakePolicy)
+    monkeypatch.setattr("vt_dual_franka_workspace.policies.mpd.policy.MPDPolicy", FakePolicy)
 
     policy = resolve_policy(
         PolicyConfig(type="mpd", config={"algorithm": "dp", "task_name": "put_cup_on_plate"}),
@@ -386,7 +386,7 @@ def test_registry_resolves_mpd_policy(monkeypatch):
 
 
 def policy_config_to_settings(policy_config: PolicyConfig, workspace: WorkspaceSettings, inference: InferenceRuntimeSettings):
-    from vt_franka_workspace.policies.mpd.config import MPDPolicySettings
+    from vt_dual_franka_workspace.policies.mpd.config import MPDPolicySettings
 
     return MPDPolicySettings.from_policy_config(policy_config, workspace, fallback_task_name=inference.task_name)
 

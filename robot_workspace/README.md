@@ -1,4 +1,4 @@
-# VT Franka Workspace
+# VT Dual Franka Workspace
 
 This package is meant for the workstation side.
 

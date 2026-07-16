@@ -177,7 +177,7 @@ def run_job(
     prepare_cmd = [
         sys.executable,
         "-m",
-        "vt_franka_workspace.policies.visuotactile.prepare",
+        "vt_dual_franka_workspace.policies.visuotactile.prepare",
         "--workspace-config",
         str(remote_root / "robot_workspace/config/workspace.yaml"),
         "--task-name",
@@ -197,7 +197,7 @@ def run_job(
     train_cmd = [
         sys.executable,
         "-m",
-        "vt_franka_workspace.policies.visuotactile.train",
+        "vt_dual_franka_workspace.policies.visuotactile.train",
         "--workspace-config",
         str(remote_root / "robot_workspace/config/workspace.yaml"),
         "--task-name",

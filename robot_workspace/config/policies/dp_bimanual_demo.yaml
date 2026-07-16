@@ -1,0 +1,9 @@
+type: dp_bimanual
+checkpoint_path: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/checkpoints/bimanual_demo/dp_bimanual
+config:
+  family: visuotactile
+  model: dp_bimanual
+  task_name: bimanual_demo
+  target_duration_sec: 0.1
+  gripper_close_threshold: 0.5
+  device: auto

@@ -10,22 +10,22 @@ except ModuleNotFoundError:
     from tools.episode_alignment import align_episode, collect_episode_dirs
 
 try:
-    from vt_franka_workspace.policies.visuotactile.canonical import CanonicalPreprocessConfig, preprocess_aligned_episode_images
-    from vt_franka_workspace.policies.visuotactile.config import DEFAULT_PREPROCESS1_PROFILE
-    from vt_franka_workspace.policies.visuotactile.image_preprocess import parse_crop_box
+    from vt_dual_franka_workspace.policies.visuotactile.canonical import CanonicalPreprocessConfig, preprocess_aligned_episode_images
+    from vt_dual_franka_workspace.policies.visuotactile.config import DEFAULT_PREPROCESS1_PROFILE
+    from vt_dual_franka_workspace.policies.visuotactile.image_preprocess import parse_crop_box
 except ModuleNotFoundError:
     import sys
 
     repo_root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(repo_root / "robot_workspace" / "src"))
     sys.path.insert(0, str(repo_root / "shared" / "src"))
-    from vt_franka_workspace.policies.visuotactile.canonical import CanonicalPreprocessConfig, preprocess_aligned_episode_images
-    from vt_franka_workspace.policies.visuotactile.config import DEFAULT_PREPROCESS1_PROFILE
-    from vt_franka_workspace.policies.visuotactile.image_preprocess import parse_crop_box
+    from vt_dual_franka_workspace.policies.visuotactile.canonical import CanonicalPreprocessConfig, preprocess_aligned_episode_images
+    from vt_dual_franka_workspace.policies.visuotactile.config import DEFAULT_PREPROCESS1_PROFILE
+    from vt_dual_franka_workspace.policies.visuotactile.image_preprocess import parse_crop_box
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate aligned_episode.npz from raw VT Franka episode streams.")
+    parser = argparse.ArgumentParser(description="Generate aligned_episode.npz from raw VT Dual Franka episode streams.")
     parser.add_argument(
         "paths",
         nargs="+",

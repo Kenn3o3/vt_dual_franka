@@ -1,4 +1,4 @@
-name: vt-franka-controller
+name: vt-dual-franka-controller
 channels:
   - pytorch
   - fair-robotics

@@ -2,4 +2,4 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-vt-franka-workspace state-bridge --workspace-config "$ROOT_DIR/robot_workspace/config/workspace.yaml"
+vt-dual-franka-workspace state-bridge --workspace-config "$ROOT_DIR/robot_workspace/config/workspace.yaml"

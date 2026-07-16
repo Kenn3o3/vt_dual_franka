@@ -10,7 +10,7 @@ from typing import Any
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Render videos from VT Franka common datasets.")
+    parser = argparse.ArgumentParser(description="Render videos from VT Dual Franka common datasets.")
     parser.add_argument("dataset_or_episode", type=Path, help="Common dataset root or one common dataset episode directory.")
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--fps", type=float, default=None)

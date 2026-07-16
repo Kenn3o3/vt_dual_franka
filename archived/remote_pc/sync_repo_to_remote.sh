@@ -57,7 +57,7 @@ if [[ "${SYNC_MODE}" == "minimal" ]]; then
     --exclude=.pytest_cache
     --exclude=.mypy_cache
     --exclude=.ruff_cache
-    --exclude='robot_workspace/src/vt_franka_workspace/policies/**/__pycache__'
+    --exclude='robot_workspace/src/vt_dual_franka_workspace/policies/**/__pycache__'
   )
   if [[ "${DRY_RUN}" == "1" ]]; then
     RSYNC_ARGS+=(--dry-run)

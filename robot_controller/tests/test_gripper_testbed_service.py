@@ -3,12 +3,12 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
-from vt_franka_controller.api.gripper_testbed_app import create_gripper_testbed_app
-from vt_franka_controller.backends.franka_ros_gripper import FrankaRosGripperOnlyBackend, RosGripperState
-from vt_franka_controller.backends.gripper_only import PolymetisGripperOnlyBackend
-from vt_franka_controller.backends.mock import MockFrankaBackend
-from vt_franka_controller.control.gripper_service import GripperTestbedService
-from vt_franka_controller.settings import BackendSettings, ControlSettings, ControllerSettings, RosGripperActionSettings, ServerSettings
+from vt_dual_franka_controller.api.gripper_testbed_app import create_gripper_testbed_app
+from vt_dual_franka_controller.backends.franka_ros_gripper import FrankaRosGripperOnlyBackend, RosGripperState
+from vt_dual_franka_controller.backends.gripper_only import PolymetisGripperOnlyBackend
+from vt_dual_franka_controller.backends.mock import MockFrankaBackend
+from vt_dual_franka_controller.control.gripper_service import GripperTestbedService
+from vt_dual_franka_controller.settings import BackendSettings, ControlSettings, ControllerSettings, RosGripperActionSettings, ServerSettings
 
 
 def _settings():

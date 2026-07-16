@@ -54,7 +54,7 @@ trap cleanup EXIT
   mkdir -p "${CHECKPOINT_DIR}"
 
   CUDA_VISIBLE_DEVICES="${GPU}" "${PYTHON_BIN}" \
-    "${REMOTE_ROOT}/robot_workspace/src/vt_franka_workspace/policies/VISTA/train.py" \
+    "${REMOTE_ROOT}/robot_workspace/src/vt_dual_franka_workspace/policies/VISTA/train.py" \
     "--config-name=${CONFIG_NAME}" \
     "task_name=${TASK_NAME}" \
     "dataset_root=${BACKEND_DATASET_ROOT}" \

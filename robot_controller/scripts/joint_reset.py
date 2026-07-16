@@ -9,8 +9,8 @@ import numpy as np
 import torch
 from polymetis import RobotInterface
 
-from vt_franka_shared.config import load_yaml_model
-from vt_franka_controller.settings import ControllerSettings
+from vt_dual_franka_shared.config import load_yaml_model
+from vt_dual_franka_controller.settings import ControllerSettings
 
 
 def format_array(values) -> str:

@@ -1,0 +1,93 @@
+obs_horizon: 2
+exe_horizon: 8
+control_hz: 10.0
+max_duration_sec: 120.0
+start_countdown_sec: 2.0
+status_print_hz: 1.0
+task_name: bimanual_demo
+initial_eef_pose_xyz_rpy_deg: null
+initial_move_duration_sec: 2.0
+gripper_forever_closed: false
+rand_init_pose: [0.00, 0.00, 0.00]
+
+modality:
+  proprioception: true
+  rgb_cameras: [left_wrist, right_wrist]
+  gelsight_frame: true
+  controller_state_max_age_sec: 2.0
+  rgb_camera_max_age_sec: 2.0
+  gelsight_max_age_sec: 2.0
+
+eval:
+  enabled: true
+  cameras: [wrist, gelsight]
+  stream_cameras: []
+  video_hz: 10.0
+
+rgb_cameras:
+  left_wrist:
+    enabled: true
+    backend: orbbec
+    stream_name: rgb_wrist_left
+    camera_name: left_wrist_orbbec_rgb
+    serial_number: ""
+    color_width: 640
+    color_height: 0
+    color_format: RGB
+    color_fps: 30
+    frame_timeout_ms: 200
+    save_frames: false
+    record_hz: 15.0
+  right_wrist:
+    enabled: true
+    backend: orbbec
+    stream_name: rgb_wrist_right
+    camera_name: right_wrist_orbbec_rgb
+    serial_number: ""
+    color_width: 640
+    color_height: 0
+    color_format: RGB
+    color_fps: 30
+    frame_timeout_ms: 200
+    save_frames: false
+    record_hz: 15.0
+
+gelsights:
+  left:
+    enabled: true
+    camera_name: left_gripper_camera_1
+    camera_index: 0
+    camera_path: ""
+    device_name_contains: GelSight Mini
+    device_serial_number: ""
+    fps: 10
+    width: 640
+    height: 480
+    apply_controls: false
+    exposure: null
+    contrast: 32
+    save_frames: false
+    record_hz: 0.0
+    buffered_recording: true
+    buffer_max_frames: 900
+    buffer_chunk_frames: 100
+    buffer_overflow_policy: fail_episode
+  right:
+    enabled: true
+    camera_name: right_gripper_camera_1
+    camera_index: 1
+    camera_path: ""
+    device_name_contains: GelSight Mini
+    device_serial_number: ""
+    fps: 10
+    width: 640
+    height: 480
+    apply_controls: false
+    exposure: null
+    contrast: 32
+    save_frames: false
+    record_hz: 0.0
+    buffered_recording: true
+    buffer_max_frames: 900
+    buffer_chunk_frames: 100
+    buffer_overflow_policy: fail_episode

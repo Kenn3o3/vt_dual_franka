@@ -3,8 +3,8 @@ from __future__ import annotations
 import numpy as np
 from fastapi.testclient import TestClient
 
-from vt_franka_workspace.operator import OperatorActionError, OperatorLogBuffer, create_operator_app
-from vt_franka_workspace.operator.control import OperatorSnapshot
+from vt_dual_franka_workspace.operator import OperatorActionError, OperatorLogBuffer, create_operator_app
+from vt_dual_franka_workspace.operator.control import OperatorSnapshot
 
 
 class FakeOperatorController:

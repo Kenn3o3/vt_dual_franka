@@ -1,5 +1,5 @@
 type: visuotactile
-checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/pencil_insertion/dp_manifeel
+checkpoint_path: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/checkpoints/pencil_insertion/dp_manifeel
 config:
   model: dp_manifeel
   task_name: pencil_insertion

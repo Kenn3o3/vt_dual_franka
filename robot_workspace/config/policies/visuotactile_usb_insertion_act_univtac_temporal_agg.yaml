@@ -1,5 +1,5 @@
 type: visuotactile
-checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/usb_insertion/act_univtac
+checkpoint_path: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/checkpoints/usb_insertion/act_univtac
 config:
   model: act_univtac
   policy_name: act_univtac_temporal_agg

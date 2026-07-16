@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from vt_franka_workspace.recording import (
+from vt_dual_franka_workspace.recording import (
     AsyncImageStreamRecorder,
     AsyncRolloutVideoRecorder,
     AsyncStreamVideoRecorder,
@@ -18,8 +18,8 @@ from vt_franka_workspace.recording import (
     RunSessionManager,
     default_canonical_stream_specs,
 )
-from vt_franka_workspace.recording.episode_streams import EpisodeImageStreamRecorder
-from vt_franka_workspace.recording.image_io import read_rgb_image
+from vt_dual_franka_workspace.recording.episode_streams import EpisodeImageStreamRecorder
+from vt_dual_franka_workspace.recording.image_io import read_rgb_image
 
 
 def test_run_session_manager_creates_nested_raw_episode(tmp_path: Path):
@@ -260,7 +260,7 @@ def test_canonical_preprocess1_stream_recorder_writes_small_rgb_chunks(tmp_path:
 
 
 def test_canonical_preprocess1_stream_recorder_updates_live_buffer_with_canonical_frame(tmp_path: Path):
-    from vt_franka_workspace.runtime import LiveSampleBuffer
+    from vt_dual_franka_workspace.runtime import LiveSampleBuffer
 
     sessions = RunSessionManager(tmp_path / "runs")
     sessions.start_run("preprocess1")

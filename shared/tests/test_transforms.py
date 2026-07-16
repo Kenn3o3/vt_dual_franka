@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
-from vt_franka_shared.transforms import SingleArmCalibration
+from vt_dual_franka_shared.transforms import SingleArmCalibration
 
 
 def test_calibration_loads_v6_assets():

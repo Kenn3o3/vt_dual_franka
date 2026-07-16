@@ -4,10 +4,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from vt_franka_workspace.inference.eval_video import write_rollout_video
-from vt_franka_workspace.recording.raw_recorder import JsonlStreamRecorder
-from vt_franka_workspace.recording.session import RunSessionManager
-from vt_franka_workspace.sensors.orbbec.frame_decoder import decode_color_buffer
+from vt_dual_franka_workspace.inference.eval_video import write_rollout_video
+from vt_dual_franka_workspace.recording.raw_recorder import JsonlStreamRecorder
+from vt_dual_franka_workspace.recording.session import RunSessionManager
+from vt_dual_franka_workspace.sensors.orbbec.frame_decoder import decode_color_buffer
 
 
 def test_decode_rgb_buffer_to_bgr():

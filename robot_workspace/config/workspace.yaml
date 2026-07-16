@@ -1,7 +1,19 @@
 controller:
-  host: 10.0.0.1
+  host: 127.0.0.1
   port: 8092
   request_timeout_sec: 0.1
+
+arms:
+  left:
+    arm_id: left
+    host: 127.0.0.1
+    port: 8092
+    request_timeout_sec: 0.1
+  right:
+    arm_id: right
+    host: 127.0.0.1
+    port: 8093
+    request_timeout_sec: 0.1
 
 teleop:
   host: 0.0.0.0
@@ -37,12 +49,12 @@ quest_feedback:
 
 recording:
   enabled: true
-  collect_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/collect
-  preprocess1_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/preprocess1
-  prepared_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/prepared
-  train_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/train
-  eval_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/eval
-  checkpoints_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints
+  collect_root: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/collect
+  preprocess1_root: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/preprocess1
+  prepared_root: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/prepared
+  train_root: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/train
+  eval_root: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/eval
+  checkpoints_root: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/checkpoints
   image_format: jpg
 
 operator_ui:
@@ -55,4 +67,4 @@ operator_ui:
   preview_refresh_hz: 5.0
 
 calibration:
-  calibration_dir: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/config/calibration/v6
+  calibration_dir: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/config/calibration/v6

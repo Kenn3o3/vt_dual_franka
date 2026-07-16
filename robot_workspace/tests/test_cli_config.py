@@ -7,14 +7,16 @@ from pathlib import Path
 
 import pytest
 
-from vt_franka_workspace import cli
-from vt_franka_workspace.config import EvalRuntimeSettings, load_inference_config, load_policy_config, load_task_config, load_workspace_config
+from vt_dual_franka_workspace import cli
+from vt_dual_franka_workspace.config import EvalRuntimeSettings, load_inference_config, load_policy_config, load_task_config, load_workspace_config
 
 
 def test_workspace_config_contains_only_global_runtime_sections():
     workspace = load_workspace_config("robot_workspace/config/workspace.yaml")
 
-    assert workspace.controller.host == "10.0.0.1"
+    assert workspace.controller.host == "127.0.0.1"
+    assert workspace.arms["left"].port == 8092
+    assert workspace.arms["right"].port == 8093
     assert workspace.recording.image_format == "jpg"
     assert workspace.recording.checkpoints_root.name == "checkpoints"
     assert workspace.operator_ui.preview_camera_role == "wrist"
@@ -54,12 +56,12 @@ def test_eval_action_step_cameras_reject_third_person():
 
 
 def test_cli_exposes_only_collect_and_run_policy(capsys):
-    parser = argparse.ArgumentParser(description="VT Franka workspace CLI")
+    parser = argparse.ArgumentParser(description="VT Dual Franka workspace CLI")
     del parser
     with pytest.raises(SystemExit):
         old_argv = sys.argv
         try:
-            sys.argv = ["vt-franka-workspace", "--help"]
+            sys.argv = ["vt-dual-franka-workspace", "--help"]
             cli.main()
         finally:
             sys.argv = old_argv
@@ -118,7 +120,7 @@ initial_eef_pose_xyz_rpy_deg: [0, 0.4, 0.5, 180, 0, 0]
     old_argv = sys.argv
     try:
         sys.argv = [
-            "vt-franka-workspace",
+            "vt-dual-franka-workspace",
             "collect",
             "--workspace-config",
             str(workspace_path),
@@ -180,7 +182,7 @@ modality:
     old_argv = sys.argv
     try:
         sys.argv = [
-            "vt-franka-workspace",
+            "vt-dual-franka-workspace",
             "collect",
             "--workspace-config",
             str(workspace_path),
@@ -233,11 +235,11 @@ calibration:
         calls["config"] = config
         return FakeResult()
 
-    monkeypatch.setattr("vt_franka_workspace.policies.visuotactile.train.train_visuotactile", fake_train)
+    monkeypatch.setattr("vt_dual_franka_workspace.policies.visuotactile.train.train_visuotactile", fake_train)
     old_argv = sys.argv
     try:
         sys.argv = [
-            "vt-franka-workspace",
+            "vt-dual-franka-workspace",
             "train-visuotactile",
             "--workspace-config",
             str(workspace_path),
@@ -339,7 +341,7 @@ operator_ui:
     old_argv = sys.argv
     try:
         sys.argv = [
-            "vt-franka-workspace",
+            "vt-dual-franka-workspace",
             "run-policy",
             "--workspace-config",
             str(workspace_path),
@@ -431,7 +433,7 @@ eval:
     old_argv = sys.argv
     try:
         sys.argv = [
-            "vt-franka-workspace",
+            "vt-dual-franka-workspace",
             "run-policy",
             "--workspace-config",
             str(workspace_path),

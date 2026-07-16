@@ -1,11 +1,11 @@
 from fastapi.testclient import TestClient
 
-from vt_franka_controller.api.app import create_app
-from vt_franka_controller.api.demo_state_app import create_demo_state_app
-from vt_franka_controller.backends.mock import MockFrankaBackend
-from vt_franka_controller.control.service import ControllerService
-from vt_franka_controller.settings import BackendSettings, ControlSettings, ControllerSettings, ServerSettings
-from vt_franka_shared.models import ControllerState, HealthStatus
+from vt_dual_franka_controller.api.app import create_app
+from vt_dual_franka_controller.api.demo_state_app import create_demo_state_app
+from vt_dual_franka_controller.backends.mock import MockFrankaBackend
+from vt_dual_franka_controller.control.service import ControllerService
+from vt_dual_franka_controller.settings import BackendSettings, ControlSettings, ControllerSettings, ServerSettings
+from vt_dual_franka_shared.models import ControllerState, HealthStatus
 
 
 def test_mock_controller_api_accepts_waypoint_and_reports_state():

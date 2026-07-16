@@ -15,11 +15,11 @@ try:
 except ModuleNotFoundError:
     from tools.episode_alignment import collect_episode_dirs
 
-from vt_franka_workspace.recording import analyze_episode_quality, format_episode_qc_summary
+from vt_dual_franka_workspace.recording import analyze_episode_quality, format_episode_qc_summary
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Compute QC metrics for VT Franka raw episode streams.")
+    parser = argparse.ArgumentParser(description="Compute QC metrics for VT Dual Franka raw episode streams.")
     parser.add_argument(
         "paths",
         nargs="+",

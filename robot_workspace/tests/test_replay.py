@@ -4,9 +4,9 @@ from pathlib import Path
 
 import numpy as np
 
-from vt_franka_workspace.config import InferenceRuntimeSettings, PolicyConfig, WorkspaceSettings
-from vt_franka_workspace.policies import resolve_policy
-from vt_franka_workspace.policies.replay.policy import ReplayPolicy, load_replay_episode
+from vt_dual_franka_workspace.config import InferenceRuntimeSettings, PolicyConfig, WorkspaceSettings
+from vt_dual_franka_workspace.policies import resolve_policy
+from vt_dual_franka_workspace.policies.replay.policy import ReplayPolicy, load_replay_episode
 
 
 def write_aligned_episode(episode_dir: Path) -> Path:

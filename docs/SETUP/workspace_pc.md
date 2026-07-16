@@ -3,9 +3,9 @@
 Install the workspace environment:
 
 ```bash
-cd /home/zhenya/kenny/visuotact/vt_franka
+cd /home/zhenya/kenny/visuotact/vt_dual_franka
 conda env create -f robot_workspace/environment.yml
-conda activate vt-franka-workspace
+conda activate vt-dual-franka-workspace
 pip install -e shared
 pip install -e robot_workspace
 ```
@@ -27,7 +27,7 @@ For MPD-family training and checkpoint inference:
 
 ```bash
 conda activate mpd
-cd /home/zhenya/kenny/visuotact/vt_franka
+cd /home/zhenya/kenny/visuotact/vt_dual_franka
 pip install -e shared
 pip install -e robot_workspace
 pip install -e robot_workspace/third_parties/mpd

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import numpy as np
 
-from vt_franka_workspace.sensors.gelsight import publisher
-from vt_franka_workspace.settings import GelsightSettings
+from vt_dual_franka_workspace.sensors.gelsight import publisher
+from vt_dual_franka_workspace.settings import GelsightSettings
 
 
 def test_filter_candidates_matches_name_and_serial():

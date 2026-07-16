@@ -8,10 +8,10 @@ from typing import Any
 
 import numpy as np
 
-from vt_franka_workspace.config import load_inference_config, load_policy_config, load_workspace_config
-from vt_franka_workspace.policies.registry import resolve_policy
-from vt_franka_workspace.policies.visuotactile.config import VisuotactilePolicySettings, get_model_spec
-from vt_franka_workspace.policies.visuotactile.runtime import action_row_to_vt_action
+from vt_dual_franka_workspace.config import load_inference_config, load_policy_config, load_workspace_config
+from vt_dual_franka_workspace.policies.registry import resolve_policy
+from vt_dual_franka_workspace.policies.visuotactile.config import VisuotactilePolicySettings, get_model_spec
+from vt_dual_franka_workspace.policies.visuotactile.runtime import action_row_to_vt_action
 
 
 def _load_episode(dataset_dir: Path, episode_index: int | None, split: str) -> tuple[Path, dict[str, np.ndarray]]:

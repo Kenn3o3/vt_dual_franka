@@ -1,6 +1,6 @@
 import numpy as np
 
-from vt_franka_shared.interpolation import PoseTrajectoryInterpolator
+from vt_dual_franka_shared.interpolation import PoseTrajectoryInterpolator
 
 
 def test_schedule_waypoint_advances_pose():

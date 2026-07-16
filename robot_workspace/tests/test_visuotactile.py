@@ -11,24 +11,24 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from vt_franka_workspace.config import InferenceRuntimeSettings, ModalitySettings, PolicyConfig, WorkspaceSettings
-from vt_franka_workspace.policies.registry import resolve_policy
-from vt_franka_workspace.policies.visuotactile.canonical import (
+from vt_dual_franka_workspace.config import InferenceRuntimeSettings, ModalitySettings, PolicyConfig, WorkspaceSettings
+from vt_dual_franka_workspace.policies.registry import resolve_policy
+from vt_dual_franka_workspace.policies.visuotactile.canonical import (
     CanonicalPreprocessConfig,
     build_preprocess1_from_collection_streams,
     preprocess_aligned_episode_images,
     write_preprocess1_dataset_manifest,
 )
-from vt_franka_workspace.policies.visuotactile.export_backend import export_prepared_dataset_for_backend
-from vt_franka_workspace.policies.visuotactile.image_preprocess import CropSpec, ImagePreprocessSpec, preprocess_image_rgb
-from vt_franka_workspace.policies.visuotactile.prepare import build_prepare_config_from_workspace, prepare_visuotactile_dataset
-from vt_franka_workspace.policies.visuotactile.remote import RemoteTrainConfig, remote_train_visuotactile
-from vt_franka_workspace.policies.visuotactile.train import TrainVisuotactileConfig, train_visuotactile
-from vt_franka_workspace.policies.visuotactile.runtime import RuntimeManifests, RuntimePreprocessor, action_row_to_vt_action
-from vt_franka_workspace.policies.visuotactile.config import VisuotactilePolicySettings, get_model_spec
-from vt_franka_workspace.recording import align_episode, default_canonical_stream_specs
-from vt_franka_workspace.recording.canonical_preprocess1 import CanonicalPreprocess1StreamRecorder
-from vt_franka_workspace.sensors.standardization import standardize_camera_frame
+from vt_dual_franka_workspace.policies.visuotactile.export_backend import export_prepared_dataset_for_backend
+from vt_dual_franka_workspace.policies.visuotactile.image_preprocess import CropSpec, ImagePreprocessSpec, preprocess_image_rgb
+from vt_dual_franka_workspace.policies.visuotactile.prepare import build_prepare_config_from_workspace, prepare_visuotactile_dataset
+from vt_dual_franka_workspace.policies.visuotactile.remote import RemoteTrainConfig, remote_train_visuotactile
+from vt_dual_franka_workspace.policies.visuotactile.train import TrainVisuotactileConfig, train_visuotactile
+from vt_dual_franka_workspace.policies.visuotactile.runtime import RuntimeManifests, RuntimePreprocessor, action_row_to_vt_action
+from vt_dual_franka_workspace.policies.visuotactile.config import VisuotactilePolicySettings, get_model_spec
+from vt_dual_franka_workspace.recording import align_episode, default_canonical_stream_specs
+from vt_dual_franka_workspace.recording.canonical_preprocess1 import CanonicalPreprocess1StreamRecorder
+from vt_dual_franka_workspace.sensors.standardization import standardize_camera_frame
 
 
 def test_preprocess_image_rgb_center_square_resize() -> None:
@@ -620,7 +620,7 @@ def test_vista_backend_loader_uses_commanded_action_not_next_observed_ee(tmp_pat
     cv2 = _require_cv2()
     pytest.importorskip("torch")
     pytest.importorskip("zarr")
-    vista_root = Path(__file__).resolve().parents[1] / "src" / "vt_franka_workspace" / "policies" / "VISTA"
+    vista_root = Path(__file__).resolve().parents[1] / "src" / "vt_dual_franka_workspace" / "policies" / "VISTA"
     if str(vista_root) not in sys.path:
         sys.path.insert(0, str(vista_root))
     dataset_module = pytest.importorskip("vista.dataset.univtac_replay_image_dataset")
@@ -717,7 +717,7 @@ def test_train_visuotactile_act_dry_run_builds_config_command(tmp_path: Path) ->
     )
 
     assert "-m" in result.command
-    assert "vt_franka_workspace.policies.ACT.imitate_episodes" in result.command
+    assert "vt_dual_franka_workspace.policies.ACT.imitate_episodes" in result.command
     assert "--config_path" in result.command
     assert str(tmp_path / "ckpt" / "backend_dataset" / "usb_insertion" / "act_hdf5") in result.command
 
@@ -795,7 +795,7 @@ def test_remote_train_visuotactile_dry_run_commands(tmp_path: Path) -> None:
 
     rendered = [" ".join(command) for command in result.commands]
     assert any("rsync" in command and "src/" not in command for command in rendered)
-    assert any("python -m vt_franka_workspace.policies.visuotactile.train" in command for command in rendered)
+    assert any("python -m vt_dual_franka_workspace.policies.visuotactile.train" in command for command in rendered)
     assert any("--backend-dataset-root" in command for command in rendered)
     assert any("--no-prepare" in command for command in rendered)
     assert result.remote_checkpoint_dir.endswith("/external/run")
@@ -814,7 +814,7 @@ def test_remote_train_visuotactile_defaults_to_common_dataset_and_remote_prepare
         }
     )
 
-    from vt_franka_workspace.policies.visuotactile import remote as remote_module
+    from vt_dual_franka_workspace.policies.visuotactile import remote as remote_module
 
     previous_workspace_root = remote_module.WORKSPACE_ROOT
     remote_module.WORKSPACE_ROOT = workspace_root
@@ -852,7 +852,7 @@ def test_remote_train_visuotactile_keeps_workspace_relative_symlink_paths(tmp_pa
     data_link = workspace_root / "data"
     data_link.symlink_to(backing_root, target_is_directory=True)
     monkeypatch.setattr(
-        "vt_franka_workspace.policies.visuotactile.remote.WORKSPACE_ROOT",
+        "vt_dual_franka_workspace.policies.visuotactile.remote.WORKSPACE_ROOT",
         workspace_root,
     )
     workspace = WorkspaceSettings(

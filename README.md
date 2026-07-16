@@ -1,4 +1,4 @@
-# VT Franka
+# VT Dual Franka
 
 ## Layout
 

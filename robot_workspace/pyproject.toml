@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vt-franka-workspace"
+name = "vt-dual-franka-workspace"
 version = "0.1.0"
-description = "Workspace-side teleop, tactile, and recording stack for VT Franka"
+description = "Workspace-side teleop, tactile, and recording stack for VT Dual Franka"
 requires-python = ">=3.9"
 dependencies = [
   "fastapi>=0.110",
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-vt-franka-workspace = "vt_franka_workspace.cli:main"
+vt-dual-franka-workspace = "vt_dual_franka_workspace.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

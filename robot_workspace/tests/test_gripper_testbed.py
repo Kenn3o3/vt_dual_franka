@@ -2,10 +2,10 @@ import time
 
 from fastapi.testclient import TestClient
 
-from vt_franka_shared.models import ControllerState
-from vt_franka_workspace.gripper_testbed.report import write_gripper_testbed_report
-from vt_franka_workspace.gripper_testbed.replay import create_gripper_testbed_replay_app
-from vt_franka_workspace.gripper_testbed.service import GripperTestbedService, GripperTestbedSettings, map_trigger_to_width, create_gripper_testbed_app
+from vt_dual_franka_shared.models import ControllerState
+from vt_dual_franka_workspace.gripper_testbed.report import write_gripper_testbed_report
+from vt_dual_franka_workspace.gripper_testbed.replay import create_gripper_testbed_replay_app
+from vt_dual_franka_workspace.gripper_testbed.service import GripperTestbedService, GripperTestbedSettings, map_trigger_to_width, create_gripper_testbed_app
 
 
 class FakeController:

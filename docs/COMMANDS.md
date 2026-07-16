@@ -1,11 +1,93 @@
-我想理清一下现在的system有没有实现好我的需求：
-- 首先，所有模型的actions应该用的是我在训练时的commanded action而不是observed embodiment。
-链路是这样的：
+# VT Dual Franka commands
+
+下面是 dual Franka 的当前推荐链路。和单臂 `vt_franka` 不同，controller PC 侧需要先启动 **两套 Polymetis robot/gripper server**，然后再启动两个 `vt-dual-franka-controller` HTTP API。
+
+## Controller PC
+
+每个 Controller PC terminal 都先进入 controller 代码目录并激活 Polymetis 环境：
+
+```bash
+source /home/zhenya/miniforge3/etc/profile.d/conda.sh
+conda activate polymetis-local
+cd /home/zhenya/kenny/visuotact/vt_dual_franka/robot_controller
+```
+
+### Terminal C1: left Polymetis robot server
+
+```bash
+launch_robot.py \
+  robot_client=franka_hardware \
+  robot_client.executable_cfg.robot_ip=172.16.0.2
+```
+
+### Terminal C2: left Polymetis gripper server
+
+```bash
+launch_gripper.py \
+  gripper=franka_hand \
+  gripper.executable_cfg.robot_ip=172.16.0.2
+```
+
+### Terminal C3: right Polymetis robot server
+
+The right arm must use a different local Polymetis robot server port from the left arm. `controller_right.yaml` currently expects `127.0.0.1:50061`.
+
+```bash
+launch_robot.py \
+  robot_client=franka_hardware \
+  robot_client.executable_cfg.robot_ip=172.16.1.2 \
+  <POLYMETIS_ROBOT_SERVER_PORT_OVERRIDE_FOR_50061>
+```
+
+### Terminal C4: right Polymetis gripper server
+
+The right gripper must use a different local Polymetis gripper server port from the left gripper. `controller_right.yaml` currently expects `127.0.0.1:50062`.
+
+```bash
+launch_gripper.py \
+  gripper=franka_hand \
+  gripper.executable_cfg.robot_ip=172.16.1.2 \
+  <POLYMETIS_GRIPPER_SERVER_PORT_OVERRIDE_FOR_50062>
+```
+
+Note: the exact Polymetis Hydra key for overriding the local gRPC port depends on the installed Polymetis version. Before hardware use, run `launch_robot.py --help` / `launch_gripper.py --help` in the Polymetis environment and replace the placeholders above. The important invariant is:
+
+```text
+left  robot server   -> 127.0.0.1:50051
+left  gripper server -> 127.0.0.1:50052
+right robot server   -> 127.0.0.1:50061
+right gripper server -> 127.0.0.1:50062
+```
+
+If your Polymetis install cannot override these ports, change `robot_controller/config/controller_right.yaml` to match the actual right-arm Polymetis ports instead.
+
+### Terminal C5: dual Controller API
+
+```bash
+source /home/zhenya/miniforge3/etc/profile.d/conda.sh
+conda activate polymetis-local
+cd /home/zhenya/kenny/visuotact/vt_dual_franka/robot_controller
+
+export PYTHONPATH=../shared/src:src:${PYTHONPATH:-}
+python scripts/preflight_dual_network.py
+scripts/run_dual_controllers.sh
+```
+
+Expected Controller API endpoints:
+
+```bash
+curl http://127.0.0.1:8092/api/v1/health
+curl http://127.0.0.1:8093/api/v1/health
+```
+
+They should report `arm_id: left` and `arm_id: right`, respectively.
+
+## Workspace PC / workstation
 
 启动环境：
 ```bash
-conda activate vt-franka-workspace
-cd /home/zhenya/kenny/visuotact/vt_franka
+conda activate vt-dual-franka-workspace
+cd /home/zhenya/kenny/visuotact/vt_dual_franka
 ```
 
 用 USB 连接 Meta Quest 到电脑
@@ -26,24 +108,24 @@ In the Quest TactAR app, set the workstation IP to:
 
 用这个command采集数据：
 ```bash
-vt-franka-workspace collect \
+vt-dual-franka-workspace collect \
   --workspace-config robot_workspace/config/workspace.yaml \
-  --task pencil_insertion_demo
+  --task bimanual_demo
 ```
 
-之后对齐数据用这个command，生成不同模型可用的统一的数据format：
+之后对齐数据用这个command，生成双臂 20D baseline 可用的 commanded-action dataset：
 
 ```bash
-vt-franka-workspace make-dataset \
-  robot_workspace/data/collect/pencil_insertion_demo \
-  --name real_pencil_insertion_demo \
+vt-dual-franka-workspace make-bimanual-dataset \
+  robot_workspace/data/collect/bimanual_demo \
+  --name real_bimanual_demo \
   --target-hz 10 \
   --overwrite
 ```
 
 里面的action label需要是真的commanded action同步得出的而不是从observed next ee得出的。
 
-之后把所有代码相关的文件rsync到remote PC 上面（/mnt/pfs_cuhk/kenny/vt_franka的目录，exclude所有大文件包括dataset）
+之后把所有代码相关的文件 rsync 到 remote PC 上面（建议使用独立 remote 目录，例如 `/mnt/pfs_cuhk/kenny/vt_dual_franka`，exclude 所有大文件包括 dataset）
 
 ```bash
 rsync -avh --info=progress2 \
@@ -52,35 +134,35 @@ rsync -avh --info=progress2 \
   --exclude='__pycache__/' \
   --exclude='*.pyc' \
   --exclude='robot_workspace/data' \
-  /home/zhenya/kenny/visuotact/vt_franka/ \
-  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_franka/
+  /home/zhenya/kenny/visuotact/vt_dual_franka/ \
+  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_dual_franka/
 ```
 
-之后把统一好的可训练数据e.g., real_pencil_insertion rsync到remote PC上面
+之后把统一好的可训练数据 e.g. `real_bimanual_demo` rsync 到 remote PC 上面
 
 ```bash
 rsync -avh --info=progress2 \
   -e "ssh -i ~/.ssh/zlkenny_yzy673_ed25519 -p 538 -o IdentitiesOnly=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6" \
-  /mnt/kenny_ssd/vt_franka/data/datasets/pencil_insertion_demo/real_pencil_insertion_demo/ \
-  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_franka/robot_workspace/data/datasets/pencil_insertion_demo/real_pencil_insertion_demo/
+  /mnt/kenny_ssd/vt_dual_franka/data/datasets/bimanual_demo/real_bimanual_demo/ \
+  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_dual_franka/robot_workspace/data/datasets/bimanual_demo/real_bimanual_demo/
 ```
 
 之后不同的模型可以在remote直接通过比如以下的命令进行训练：
 
 ```bash
-tmux new -s pencil_insertion_demo_vista_so3
+tmux new -s bimanual_demo_dp
 
-cd /mnt/pfs_cuhk/kenny/vt_franka
+cd /mnt/pfs_cuhk/kenny/vt_dual_franka
 export PYTHONPATH=robot_workspace/src:shared/src:${PYTHONPATH:-}
 conda activate isp
 
-CUDA_VISIBLE_DEVICES=7 python -m vt_franka_workspace.cli train-visuotactile \
+CUDA_VISIBLE_DEVICES=7 python -m vt_dual_franka_workspace.cli train-visuotactile \
   --workspace-config robot_workspace/config/workspace.yaml \
-  --task-name pencil_insertion_demo \
-  --model vista_so3 \
-  --dataset-name real_pencil_insertion_demo \
-  --dataset-dir robot_workspace/data/datasets/pencil_insertion_demo/real_pencil_insertion_demo \
-  --checkpoint-dir robot_workspace/data/checkpoints/pencil_insertion_demo/vista_so3 \
+  --task-name bimanual_demo \
+  --model dp_bimanual \
+  --dataset-name real_bimanual_demo \
+  --dataset-dir robot_workspace/data/datasets/bimanual_demo/real_bimanual_demo \
+  --checkpoint-dir robot_workspace/data/checkpoints/bimanual_demo/dp_bimanual \
   --device cuda:0 \
   --extra-arg training.checkpoint_every=30
 ```
@@ -92,40 +174,32 @@ CUDA_VISIBLE_DEVICES=7 python -m vt_franka_workspace.cli train-visuotactile \
 用比如以下的指令下载需要模型的checkpoint到local pc：
 
 ```bash
-mkdir -p /mnt/kenny_ssd/vt_franka/data/checkpoints/pencil_insertion_demo/vista_so3/checkpoints
+mkdir -p /mnt/kenny_ssd/vt_dual_franka/data/checkpoints/bimanual_demo/dp_bimanual/checkpoints
 
 rsync -avh --info=progress2 \
   -e "ssh -i ~/.ssh/zlkenny_yzy673_ed25519 -p 538 -o IdentitiesOnly=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6" \
   --exclude='backend_dataset/' \
   --exclude='checkpoints/' \
-  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_franka/robot_workspace/data/checkpoints/pencil_insertion_demo/vista_so3/ \
-  /mnt/kenny_ssd/vt_franka/data/checkpoints/pencil_insertion_demo/vista_so3/
+  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_dual_franka/robot_workspace/data/checkpoints/bimanual_demo/dp_bimanual/ \
+  /mnt/kenny_ssd/vt_dual_franka/data/checkpoints/bimanual_demo/dp_bimanual/
 
 rsync -avh --info=progress2 \
   -e "ssh -i ~/.ssh/zlkenny_yzy673_ed25519 -p 538 -o IdentitiesOnly=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6" \
-  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_franka/robot_workspace/data/checkpoints/pencil_insertion_demo/vista_so3/checkpoints/epoch=209.ckpt \
-  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_franka/robot_workspace/data/checkpoints/pencil_insertion_demo/vista_so3/checkpoints/epoch=209.info.json \
-  /mnt/kenny_ssd/vt_franka/data/checkpoints/pencil_insertion_demo/vista_so3/checkpoints/
+  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_dual_franka/robot_workspace/data/checkpoints/bimanual_demo/dp_bimanual/checkpoints/epoch=209.ckpt \
+  zlkenny@120.48.58.215:/mnt/pfs_cuhk/kenny/vt_dual_franka/robot_workspace/data/checkpoints/bimanual_demo/dp_bimanual/checkpoints/epoch=209.info.json \
+  /mnt/kenny_ssd/vt_dual_franka/data/checkpoints/bimanual_demo/dp_bimanual/checkpoints/
 ```
 
 然后直接在local跑推理：
 
 ```bash
 source /home/zhenya/miniforge3/etc/profile.d/conda.sh
-conda activate /mnt/kenny_ssd/conda_envs/isp_real
+conda activate vt-dual-franka-workspace
 export PYTHONPATH=$PWD/robot_workspace/src:$PWD/shared/src:$PYTHONPATH
 
-python -m vt_franka_workspace.cli run-policy \
+python -m vt_dual_franka_workspace.cli run-policy \
   --workspace-config robot_workspace/config/workspace.yaml \
-  --task pencil_insertion_demo \
-  --inference-config robot_workspace/config/inference/pencil_insertion_visuotactile.yaml \
-  --policy-config robot_workspace/config/policies/visuotactile_pencil_insertion_demo_vista_so3_epoch059_ddim16.yaml
-```
-
-```bash
-python -m vt_franka_workspace.cli run-policy \
-  --workspace-config robot_workspace/config/workspace.yaml \
-  --task pencil_insertion_demo \
-  --inference-config robot_workspace/config/inference/pencil_insertion_visuotactile.yaml \
-  --policy-config robot_workspace/config/policies/visuotactile_pencil_insertion_demo_vista_so3_epoch209_ddim16.yaml
+  --task bimanual_demo \
+  --inference-config robot_workspace/config/inference/bimanual_demo_dp.yaml \
+  --policy-config robot_workspace/config/policies/dp_bimanual_demo.yaml
 ```

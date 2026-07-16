@@ -20,8 +20,8 @@ SHARED_SRC = REPO_ROOT / "shared" / "src"
 if str(SHARED_SRC) not in sys.path:
     sys.path.insert(0, str(SHARED_SRC))
 
-from vt_franka_workspace.config import GelsightSettings, load_task_config
-from vt_franka_workspace.sensors.gelsight.publisher import GelsightPublisher
+from vt_dual_franka_workspace.config import GelsightSettings, load_task_config
+from vt_dual_franka_workspace.sensors.gelsight.publisher import GelsightPublisher
 
 def main() -> None:
     parser = argparse.ArgumentParser(

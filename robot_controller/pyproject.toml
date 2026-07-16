@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vt-franka-controller"
+name = "vt-dual-franka-controller"
 version = "0.1.0"
-description = "High-frequency Franka controller for VT Franka"
+description = "High-frequency Franka controller for VT Dual Franka"
 requires-python = ">=3.8"
 dependencies = [
   "fastapi>=0.110",
@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
-vt-franka-controller = "vt_franka_controller.cli:main"
+vt-dual-franka-controller = "vt_dual_franka_controller.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

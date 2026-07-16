@@ -5,10 +5,10 @@ The controller PC runs the Franka-side controller API. It should be directly con
 Start the robot and gripper services with the local Polymetis setup, then run:
 
 ```bash
-conda activate vt-franka-controller
+conda activate vt-dual-franka-controller
 cd /home/medair/vt_franka/robot_controller
 
-vt-franka-controller run \
+vt-dual-franka-controller run \
   --config /home/medair/vt_franka/robot_controller/config/controller.yaml
 ```
 

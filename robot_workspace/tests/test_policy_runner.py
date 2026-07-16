@@ -8,14 +8,14 @@ from typing import Any
 import numpy as np
 import pytest
 
-from vt_franka_shared.models import ControllerState
-from vt_franka_workspace.config import InferenceRuntimeSettings, ModalitySettings, RgbCameraSettings, WorkspaceSettings
-from vt_franka_workspace.inference import ObservationAssembler, ObservationHistory, PolicyRunner
-from vt_franka_workspace.inference.actions import ActionExecutor
-from vt_franka_workspace.inference.policy_runner import GripperStatusEstimator
-from vt_franka_workspace.operator import OperatorActionError
-from vt_franka_workspace.policies.base import Policy
-from vt_franka_workspace.runtime import LiveSampleBuffer, eef_xyz_rpy_deg_to_tcp_pose
+from vt_dual_franka_shared.models import ControllerState
+from vt_dual_franka_workspace.config import InferenceRuntimeSettings, ModalitySettings, RgbCameraSettings, WorkspaceSettings
+from vt_dual_franka_workspace.inference import ObservationAssembler, ObservationHistory, PolicyRunner
+from vt_dual_franka_workspace.inference.actions import ActionExecutor
+from vt_dual_franka_workspace.inference.policy_runner import GripperStatusEstimator
+from vt_dual_franka_workspace.operator import OperatorActionError
+from vt_dual_franka_workspace.policies.base import Policy
+from vt_dual_franka_workspace.runtime import LiveSampleBuffer, eef_xyz_rpy_deg_to_tcp_pose
 
 
 TEST_HOME_JOINTS = [0.0] * 7
@@ -1099,8 +1099,8 @@ def test_policy_runner_starts_eval_camera_without_policy_camera(monkeypatch, tmp
         target(None)
         workers[name] = type("FakeWorker", (), {"required": required, "error": None, "is_alive": lambda self: False})()
 
-    monkeypatch.setattr("vt_franka_workspace.inference.policy_runner.build_rgb_camera_recorder", FakeRecorder)
-    monkeypatch.setattr("vt_franka_workspace.inference.policy_runner.start_thread_worker", fake_start_worker)
+    monkeypatch.setattr("vt_dual_franka_workspace.inference.policy_runner.build_rgb_camera_recorder", FakeRecorder)
+    monkeypatch.setattr("vt_dual_franka_workspace.inference.policy_runner.start_thread_worker", fake_start_worker)
 
     runner._start_workers()
 
@@ -1158,7 +1158,7 @@ def test_action_executor_sends_gripper_state_changes_immediately():
     controller = FakeController()
     executor = ActionExecutor(controller)
 
-    from vt_franka_workspace.inference.actions import Action
+    from vt_dual_franka_workspace.inference.actions import Action
 
     executor.execute(Action(gripper_closed=True))
     executor.execute(Action(gripper_closed=True))
@@ -1176,7 +1176,7 @@ def test_action_executor_blocks_gripper_transition_before_tcp_waypoint():
     controller = FakeController()
     executor = ActionExecutor(controller)
 
-    from vt_franka_workspace.inference.actions import Action
+    from vt_dual_franka_workspace.inference.actions import Action
 
     target = eef_xyz_rpy_deg_to_tcp_pose([0.41, 0.01, 0.31, 180.0, 0.0, 0.0])
     executor.execute(Action(target_tcp=target, target_duration_sec=0.1, gripper_closed=True))
@@ -1190,7 +1190,7 @@ def test_action_executor_force_gripper_closed_suppresses_open_width():
     controller = FakeController()
     executor = ActionExecutor(controller, force_gripper_closed=True)
 
-    from vt_franka_workspace.inference.actions import Action
+    from vt_dual_franka_workspace.inference.actions import Action
 
     action = Action(gripper_width=0.078)
     executed = executor.normalize_for_execution(action)

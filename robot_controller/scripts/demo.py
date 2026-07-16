@@ -14,10 +14,10 @@ from polymetis import GripperInterface, RobotInterface
 from scipy.spatial.transform import Rotation, Slerp
 import uvicorn
 
-from vt_franka_controller.api.demo_state_app import create_demo_state_app
-from vt_franka_controller.settings import BackendSettings, ControlSettings, ControllerSettings, ServerSettings
-from vt_franka_shared.models import ControllerState, HealthStatus
-from vt_franka_shared.pose_math import xyzw_to_wxyz
+from vt_dual_franka_controller.api.demo_state_app import create_demo_state_app
+from vt_dual_franka_controller.settings import BackendSettings, ControlSettings, ControllerSettings, ServerSettings
+from vt_dual_franka_shared.models import ControllerState, HealthStatus
+from vt_dual_franka_shared.pose_math import xyzw_to_wxyz
 
 
 # Edit these values directly for your test.

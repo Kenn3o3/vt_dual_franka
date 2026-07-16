@@ -18,5 +18,5 @@ width_deadband_m: 0.0015
 command_record_hz: 0.0
 quest_message_record_hz: 0.0
 status_history_len: 240
-collect_root: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/gripper_testbed
+collect_root: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/gripper_testbed
 require_enable_button: false

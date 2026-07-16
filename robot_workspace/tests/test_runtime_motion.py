@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 import requests
 
-from vt_franka_workspace.controller.client import ControllerClient, ControllerClientError
-from vt_franka_workspace.runtime import eef_xyz_rpy_deg_to_tcp_pose, sample_randomized_initial_pose
+from vt_dual_franka_workspace.controller.client import ControllerClient, ControllerClientError
+from vt_dual_franka_workspace.runtime import eef_xyz_rpy_deg_to_tcp_pose, sample_randomized_initial_pose
 
 
 def test_eef_xyz_rpy_deg_to_tcp_pose_returns_wxyz_quaternion():

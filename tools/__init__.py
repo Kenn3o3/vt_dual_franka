@@ -1,1 +1,1 @@
-"""Standalone VT Franka data tools."""
+"""Standalone VT Dual Franka data tools."""

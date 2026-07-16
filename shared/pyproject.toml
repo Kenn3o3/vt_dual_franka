@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vt-franka-shared"
+name = "vt-dual-franka-shared"
 version = "0.1.0"
-description = "Shared contracts and math for VT Franka"
+description = "Shared contracts and math for VT Dual Franka"
 requires-python = ">=3.8"
 dependencies = [
   "numpy>=1.23",

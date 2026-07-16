@@ -50,7 +50,7 @@ trap cleanup EXIT
   echo "[probe] prepared_dir=${PREPARED_DIR}"
   echo "[probe] checkpoint_dir=${CHECKPOINT_DIR}"
 
-  "${PYTHON_BIN}" -m vt_franka_workspace.policies.visuotactile.prepare \
+  "${PYTHON_BIN}" -m vt_dual_franka_workspace.policies.visuotactile.prepare \
     --workspace-config "${REMOTE_ROOT}/robot_workspace/config/workspace.yaml" \
     --task-name "${TASK_NAME}" \
     --model "${MODEL}" \
@@ -60,7 +60,7 @@ trap cleanup EXIT
     --source-root "${PREPROCESS1_ROOT}" \
     --overwrite
 
-  CUDA_VISIBLE_DEVICES="${GPU}" "${PYTHON_BIN}" -m vt_franka_workspace.policies.visuotactile.train \
+  CUDA_VISIBLE_DEVICES="${GPU}" "${PYTHON_BIN}" -m vt_dual_franka_workspace.policies.visuotactile.train \
     --workspace-config "${REMOTE_ROOT}/robot_workspace/config/workspace.yaml" \
     --task-name "${TASK_NAME}" \
     --model "${MODEL}" \

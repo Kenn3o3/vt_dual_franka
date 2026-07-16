@@ -1,5 +1,5 @@
 type: visuotactile
-checkpoint_path: /home/zhenya/kenny/visuotact/vt_franka/robot_workspace/data/checkpoints/pencil_insertion_demo/vista_so3
+checkpoint_path: /home/zhenya/kenny/visuotact/vt_dual_franka/robot_workspace/data/checkpoints/pencil_insertion_demo/vista_so3
 config:
   model: vista_so3
   task_name: pencil_insertion_demo

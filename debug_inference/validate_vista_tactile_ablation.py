@@ -21,8 +21,8 @@ for source_root in (REPO_ROOT / "shared" / "src", REPO_ROOT / "robot_workspace" 
     if source_root_str not in sys.path:
         sys.path.insert(0, source_root_str)
 
-from vt_franka_workspace.config import load_workspace_config  # noqa: E402
-from vt_franka_workspace.policies.common.visuotactile.mockrun_episode import (  # noqa: E402
+from vt_dual_franka_workspace.config import load_workspace_config  # noqa: E402
+from vt_dual_franka_workspace.policies.common.visuotactile.mockrun_episode import (  # noqa: E402
     DEFAULT_WORKSPACE_CONFIG,
     _resolve_checkpoint_reference,
     _resolve_inference_config,
@@ -30,9 +30,9 @@ from vt_franka_workspace.policies.common.visuotactile.mockrun_episode import (  
     build_observation_window,
     load_episode_steps,
 )
-from vt_franka_workspace.policies.common.visuotactile.policy import VisuotactilePolicy  # noqa: E402
-from vt_franka_workspace.policies.common.visuotactile.runtime import action_row_to_vt_action  # noqa: E402
-from vt_franka_workspace.policies.common.visuotactile.vendor_vista_runtime import (  # noqa: E402
+from vt_dual_franka_workspace.policies.common.visuotactile.policy import VisuotactilePolicy  # noqa: E402
+from vt_dual_franka_workspace.policies.common.visuotactile.runtime import action_row_to_vt_action  # noqa: E402
+from vt_dual_franka_workspace.policies.common.visuotactile.vendor_vista_runtime import (  # noqa: E402
     _configure_vista_sampling,
 )
 

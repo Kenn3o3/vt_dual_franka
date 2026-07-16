@@ -2,8 +2,8 @@ import types
 
 import numpy as np
 
-from vt_franka_workspace.publishers import quest_udp
-from vt_franka_workspace.settings import QuestImageStreamSettings
+from vt_dual_franka_workspace.publishers import quest_udp
+from vt_dual_franka_workspace.settings import QuestImageStreamSettings
 
 
 def test_encode_bson_uses_bson_class_when_dumps_missing(monkeypatch):
